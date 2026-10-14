@@ -46,7 +46,7 @@ struct QuotaBarMenuView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("QuotaBar")
                     .font(.headline)
-                Text(lastUpdatedText)
+                Text(store.networkAvailable ? lastUpdatedText : "Offline — showing last known data")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -208,7 +208,7 @@ struct SettingsView: View {
         Form {
             Section("General") {
                 Toggle("Launch QuotaBar at login", isOn: $preferences.launchAtLogin)
-                Text("Usage refreshes every five minutes, on wake, and when the menu opens.")
+                Text("Adaptive refresh: every 1–5 minutes, on wake and network recovery. Errors slow retries.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if let error = preferences.launchAtLoginError {

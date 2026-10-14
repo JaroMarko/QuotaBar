@@ -177,6 +177,24 @@ if let encoded = try? JSONEncoder().encode(measured), let decoded = try? JSONDec
     runner.check(decoded.source == "fixture" && decoded.account == "fixture", "snapshot source/account round trip")
 } else { runner.check(false, "snapshot source/account round trip") }
 
+let quiet = UsageSnapshot(provider: .codex, plan: nil, windows: [
+    UsageWindow(id: "weekly", name: "Weekly", usedPercent: 30, resetsAt: measuredAt.addingTimeInterval(10_000), durationMinutes: 10_080)
+], fetchedAt: measuredAt)
+runner.check(RefreshPolicy.interval(previous: quiet, current: quiet, now: measuredAt) == 300, "quiet quota uses slower refresh")
+runner.check(RefreshPolicy.interval(previous: nil, current: measured, now: measuredAt) == 60, "new or near-reset quota uses faster refresh")
+runner.check(RefreshPolicy.retryInterval(failures: 20, error: .timedOut("test")) == 900, "retry delay is capped")
+runner.check(RefreshPolicy.retryInterval(failures: 1, error: .rateLimited("test")) == 600, "rate limit has cooldown")
+var ledger = AlertLedger()
+let firstAlerts = ledger.take(previous: snapshot(used: 70, reset: 100), current: snapshot(used: 92, reset: 100), thresholds: [75,90], resetEnabled: true)
+let repeated = ledger.take(previous: snapshot(used: 70, reset: 100), current: snapshot(used: 92, reset: 100), thresholds: [75,90], resetEnabled: true)
+runner.check(firstAlerts.count == 2 && repeated.isEmpty, "deduplicate fluctuating threshold crossings")
+if let encoded = try? JSONEncoder().encode(ledger), var restored = try? JSONDecoder().decode(AlertLedger.self, from: encoded) {
+    runner.check(restored.take(previous: snapshot(used: 70, reset: 100), current: snapshot(used: 92, reset: 100), thresholds: [75,90], resetEnabled: true).isEmpty, "notification ledger survives restart")
+}
+let otherAccount = UsageSnapshot(provider: .codex, plan: nil, windows: snapshot(used: 99, reset: 100).windows, fetchedAt: measuredAt, account: "other")
+runner.check(AlertEngine.events(previous: snapshot(used: 70, reset: 100), current: otherAccount, enabledThresholds: [90], resetEnabled: true).isEmpty, "account switch does not fabricate crossing")
+runner.check(AlertEngine.events(previous: snapshot(used: 90, reset: 100), current: snapshot(used: 90, reset: 200), enabledThresholds: [], resetEnabled: true).isEmpty, "reset timestamp alone is not a confirmed reset")
+
 print("\nQuotaBar checks: \(runner.passed) passed, \(runner.failed) failed")
 if runner.failed > 0 { exit(1) }
 

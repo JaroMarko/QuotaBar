@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 protocol HTTPClient: Sendable {
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse)
@@ -18,6 +19,9 @@ public struct ClaudeCredential: Sendable {
     public let accessToken: String
     public let planHint: String?
     public let expiresAt: Date?
+    public var sessionScope: String {
+        "session-" + SHA256.hash(data: Data(accessToken.utf8)).prefix(16).map { String(format: "%02x", $0) }.joined()
+    }
 
     public init(accessToken: String, planHint: String?, expiresAt: Date? = nil) {
         self.accessToken = accessToken
@@ -75,7 +79,7 @@ public struct ClaudeUsageProvider: UsageProvider {
         case 200:
             let decoded = try ClaudeUsageDecoder.decode(data, planHint: credential.planHint, now: Date())
             return UsageSnapshot(provider: .claude, plan: decoded.plan, windows: decoded.windows,
-                                 fetchedAt: decoded.fetchedAt, source: "Claude OAuth usage", account: nil)
+                                 fetchedAt: decoded.fetchedAt, source: "Claude OAuth usage", account: nil, accountID: credential.sessionScope)
         case 401:
             throw ProviderError.notSignedIn("claude auth login")
         case 403:

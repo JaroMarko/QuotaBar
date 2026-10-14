@@ -15,3 +15,6 @@ Phase 1 validation: build and 27 regression checks passed; both live probes succ
 Menu bar is a single monochrome template image containing Claude sparkle and Codex code symbols with independent consumed-quota rings. Each ring uses the most-used reported window. Unknown/stale values use dotted rings, never a 0% fill. Exact windows, timestamps, source/account availability and reset dates are in the menu.
 
 Phase 2: release build and 27 checks passed. Graphical rendering and GUI startup will also be inspected in final smoke verification.
+
+## Phase 3
+Observed quota changes, >=90% usage and upcoming resets select 60s refresh; quiet quotas select 300s. Failures back off to 900s, 429 cooldown is 600s and manual refresh cannot bypass it. NWPathMonitor and workspace wake/sleep callbacks drive recovery. AlertLedger persists bounded account/window/cycle keys to suppress duplicate crossings across restarts. Claude scope is a nonreversible session-token fingerprint because the usage endpoint supplies no confirmed account identity; rotating login tokens starts a new history scope rather than mixing accounts.

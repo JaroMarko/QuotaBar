@@ -52,15 +52,19 @@ public struct UsageSnapshot: Codable, Equatable, Sendable {
     public let fetchedAt: Date
     public let source: String?
     public let account: String?
+    public let accountID: String?
 
-    public init(provider: ProviderKind, plan: String?, windows: [UsageWindow], fetchedAt: Date, source: String? = nil, account: String? = nil) {
+    public init(provider: ProviderKind, plan: String?, windows: [UsageWindow], fetchedAt: Date, source: String? = nil, account: String? = nil, accountID: String? = nil) {
         self.provider = provider
         self.plan = plan
         self.windows = windows
         self.fetchedAt = fetchedAt
         self.source = source
         self.account = account
+        self.accountID = accountID
     }
+
+    public var accountScope: String { accountID ?? account ?? "unknown" }
 
     public var highestUsedPercent: Double {
         windows.filter { $0.usedPercent.isFinite }.map(\.clampedUsedPercent).max() ?? 0

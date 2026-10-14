@@ -7,7 +7,7 @@ Deliver a functioning local macOS Claude/Codex quota monitor with graphical menu
 - [x] 0. Preserve baseline and analyse current code/live failures.
 - [x] 1. Repair acquisition, bounded subprocesses, schema validation and diagnostics; confirm live sources.
 - [x] 2. Add graphical provider icons without text, quota details and freshness/account/source display.
-- [ ] 3. Adaptive refresh, wake/offline recovery, notification deduplication and confirmed resets.
+- [x] 3. Adaptive refresh, wake/offline recovery, notification deduplication and confirmed resets.
 - [ ] 4. Bounded local history, charts and conservative pace/forecast; alternative provider overview.
 - [ ] 5. Build/package checks, app installation, documented limitations and memory update.
 
@@ -24,7 +24,7 @@ No new backend, telemetry, provider purchases, account switching, mobile sync or
 - Initial write attempted without filesystem escalation and was denied before mutation; rerun under authorised escalation succeeded.
 
 ## Status
-Phase 3: adaptive refresh, network/wake recovery and notification deduplication.
+Phase 4: bounded history, charts and conservative forecasts.
 
 ## Acceptance criteria
 1. Both live provider checks return nonempty validated quota windows; noisy child and stuck child probes terminate within bounds.
@@ -35,3 +35,5 @@ Phase 3: adaptive refresh, network/wake recovery and notification deduplication.
 
 ## Validation so far
 - Phase 1: release build/codesign passed; 27 checks passed; live Claude (2 windows) and Codex (1 window) succeeded.
+
+- Phase 3: release build and 35 checks passed. Real sleep/wake and GUI network recovery still need system-level verification.
