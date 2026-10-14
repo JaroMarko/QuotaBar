@@ -10,3 +10,8 @@ Evidence, design decisions and validation are recorded here per stage.
 - Official Codex protocol reference: https://learn.chatgpt.com/docs/app-server
 
 Phase 1 validation: build and 27 regression checks passed; both live probes succeeded after changes.
+
+## Phase 2 design
+Menu bar is a single monochrome template image containing Claude sparkle and Codex code symbols with independent consumed-quota rings. Each ring uses the most-used reported window. Unknown/stale values use dotted rings, never a 0% fill. Exact windows, timestamps, source/account availability and reset dates are in the menu.
+
+Phase 2: release build and 27 checks passed. Graphical rendering and GUI startup will also be inspected in final smoke verification.

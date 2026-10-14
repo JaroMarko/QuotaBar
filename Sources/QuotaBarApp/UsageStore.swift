@@ -47,11 +47,6 @@ final class UsageStore: ObservableObject {
         [.claude, .codex].compactMap { states[$0] }
     }
 
-    var menuBarText: String {
-        let highest = orderedStates.compactMap { $0.snapshot?.highestUsedPercent }.max()
-        return highest.map(UsageFormatting.percent) ?? "—"
-    }
-
     func start() {
         guard !started else { return }
         started = true

@@ -6,13 +6,15 @@ struct MenuBarLabel: View {
     @ObservedObject var store: UsageStore
 
     var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "chart.bar.fill")
-            Text(store.menuBarText)
-                .monospacedDigit()
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            Image(nsImage: MenuBarIcon.image(states: store.orderedStates, now: context.date))
+                .accessibilityLabel(store.orderedStates.map { state in
+                    if let value = state.meterValue(at: context.date) {
+                        return "\(state.provider.displayName): \(UsageFormatting.percent(value)) used"
+                    }
+                    return "\(state.provider.displayName): current usage unavailable"
+                }.joined(separator: ", "))
         }
-        .accessibilityLabel("Plan usage \(store.menuBarText)")
-        .task { store.start() }
     }
 }
 
@@ -34,7 +36,7 @@ struct QuotaBarMenuView: View {
             footer
         }
         .padding(14)
-        .frame(width: 370)
+        .frame(width: 410)
         .task { await store.refreshIfStale() }
         .sheet(isPresented: $showingAbout) { AboutView() }
     }
@@ -78,7 +80,7 @@ struct QuotaBarMenuView: View {
 
     private var lastUpdatedText: String {
         guard let date = store.lastRefreshAt else { return "Waiting for first refresh" }
-        return "Updated \(date.formatted(date: .omitted, time: .shortened))"
+        return "Last check \(date.formatted(date: .omitted, time: .shortened))"
     }
 }
 
@@ -102,7 +104,7 @@ struct ProviderCard: View {
                 }
                 Spacer()
                 if state.isRefreshing { ProgressView().controlSize(.small) }
-                if state.isStale {
+                if state.hasStaleData() {
                     Image(systemName: "clock.badge.exclamationmark")
                         .foregroundStyle(.secondary)
                         .help("Showing last known usage")
@@ -111,13 +113,22 @@ struct ProviderCard: View {
 
             if let snapshot = state.snapshot {
                 ForEach(snapshot.windows) { window in
-                    UsageWindowRow(window: window)
+                    UsageWindowRow(window: window, isStale: state.hasStaleData(), isTightest: window.id == snapshot.windows.max(by: { $0.clampedUsedPercent < $1.clampedUsedPercent })?.id)
                     if window.id != snapshot.windows.last?.id {
                         Divider().opacity(0.55)
                     }
                 }
             }
 
+            if let snapshot = state.snapshot {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Measured \(snapshot.fetchedAt.formatted(date: .abbreviated, time: .standard))")
+                    Text(snapshot.source ?? "Legacy cached measurement")
+                    Text(snapshot.account ?? "Account identity not supplied by this source")
+                    if state.hasStaleData() { Text("Last known data — current quota is unconfirmed").foregroundStyle(.orange) }
+                }
+                .font(.caption2).foregroundStyle(.secondary)
+            }
             if let error = state.errorMessage {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
@@ -147,12 +158,15 @@ struct ProviderCard: View {
 
 struct UsageWindowRow: View {
     let window: UsageWindow
+    var isStale = false
+    var isTightest = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
                 Text(window.name)
                     .font(.subheadline.weight(.medium))
+                if isTightest { Image(systemName: "gauge.with.dots.needle.67percent").help("Most-used reported quota window") }
                 Spacer()
                 Text("\(UsageFormatting.percent(window.clampedUsedPercent)) used")
                     .font(.caption.monospacedDigit().weight(.semibold))
@@ -169,7 +183,12 @@ struct UsageWindowRow: View {
             .font(.caption2)
             .foregroundStyle(.secondary)
             .monospacedDigit()
+            if let reset = window.resetsAt {
+                Text("Reset: \(reset.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
         }
+        .opacity(isStale ? 0.55 : 1)
     }
 
     private var progressColor: Color {
