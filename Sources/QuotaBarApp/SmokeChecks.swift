@@ -73,7 +73,7 @@ enum SmokeChecks {
     static func writeIconPreview(path: String) {
         let now = Date()
         let combinations: [(Double?, Double?)] = [(10,25),(60,85),(100,100),(nil,nil)]
-        print("OpenAI artwork loaded: \(MenuBarIcon.hasOpenAIArtwork)")
+        print("Provider artwork loaded: Claude \(MenuBarIcon.hasClaudeArtwork), OpenAI \(MenuBarIcon.hasOpenAIArtwork)")
         let image = NSImage(size: NSSize(width: 440, height: 100), flipped: false) { _ in
             NSColor.white.setFill(); NSBezierPath(rect: NSRect(x: 0,y: 0,width: 440,height: 100)).fill()
             for (index, values) in combinations.enumerated() {

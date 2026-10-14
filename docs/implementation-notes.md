@@ -31,3 +31,6 @@ Final review: bounded subprocess input, cleanup on input errors and history supp
 
 ## Readable provider icons (1.1.1)
 Jaro reported the 9pt symbols were illegible. Replaced them with a bold 16x14pt Clawd-style pixel mascot and OpenAI's official unmodified Blossom SVG; increased ring canvas from 20pt to 24pt and total icon width from 46pt to 60pt. Numeric text stays outside the menu bar.
+
+## Claude recognisability (1.1.2)
+Jaro found the custom pixel robot too large and not recognisable as Claude. Replaced it with the actual 24pt Claude spark geometry from the installed official app, rendered at 15pt inside the same quota ring. OpenAI artwork and status-item width are unchanged.
