@@ -12,13 +12,17 @@ enum MenuBarIcon {
     static var hasClaudeArtwork: Bool { claude != nil }
 
     static func image(states: [ProviderDisplayState], mode: MenuBarMode = .concentric, now: Date = Date()) -> NSImage {
+        let combined = mode == .concentric || mode == .semicircles
+        let allOff = mode.providers.allSatisfy { provider in states.first(where: { $0.provider == provider })?.isInactive == true }
+        let renderedMode: MenuBarMode = combined && allOff ? .iconOnly : mode
         let image = NSImage(size: size, flipped: false) { _ in
             let values = Dictionary(uniqueKeysWithValues: states.map { ($0.provider, $0.meterValue(at: now)) })
             func ring(_ provider: ProviderKind, radius: CGFloat, start: CGFloat = 90,
                       span: CGFloat = 360, clockwise: Bool = true) {
+                guard states.first(where: { $0.provider == provider })?.isInactive != true else { return }
                 drawRing(value: values[provider] ?? nil, radius: radius, start: start, span: span, clockwise: clockwise)
             }
-            switch mode {
+            switch renderedMode {
             case .concentric:
                 ring(.claude, radius: 10.7)
                 ring(.codex, radius: 7.8)
@@ -40,7 +44,7 @@ enum MenuBarIcon {
             case .iconOnly:
                 drawQuotaMark(diameter: 18)
             }
-            if states.contains(where: { mode.providers.contains($0.provider) && $0.errorMessage != nil }) {
+            if states.contains(where: { mode.providers.contains($0.provider) && !$0.isInactive && $0.errorMessage != nil }) {
                 NSColor.black.setFill()
                 NSBezierPath(ovalIn: NSRect(x: 21, y: 0, width: 3, height: 3)).fill()
             }

@@ -62,7 +62,7 @@ public struct ClaudeUsageProvider: UsageProvider {
         request.httpMethod = "GET"
         request.setValue("Bearer \(credential.accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
-        request.setValue("QuotaBar/1.3.1", forHTTPHeaderField: "User-Agent")
+        request.setValue("QuotaBar/1.3.2", forHTTPHeaderField: "User-Agent")
 
         let (data, response): (Data, HTTPURLResponse)
         do {

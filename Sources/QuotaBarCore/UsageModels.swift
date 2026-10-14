@@ -151,14 +151,16 @@ public struct ProviderDisplayState: Identifiable, Sendable {
     public var errorHelp: String?
     public var isRefreshing: Bool
     public var isStale: Bool
+    public var isInactive: Bool
 
-    public init(provider: ProviderKind, snapshot: UsageSnapshot?, errorMessage: String?, isRefreshing: Bool, isStale: Bool, errorHelp: String? = nil) {
+    public init(provider: ProviderKind, snapshot: UsageSnapshot?, errorMessage: String?, isRefreshing: Bool, isStale: Bool, errorHelp: String? = nil, isInactive: Bool = false) {
         self.provider = provider
         self.snapshot = snapshot
         self.errorMessage = errorMessage
         self.errorHelp = errorHelp
         self.isRefreshing = isRefreshing
         self.isStale = isStale
+        self.isInactive = isInactive
     }
 
     public var id: ProviderKind { provider }
@@ -170,7 +172,7 @@ public struct ProviderDisplayState: Identifiable, Sendable {
     }
 
     public func meterValue(at now: Date = Date()) -> Double? {
-        guard let snapshot, !hasStaleData(at: now) else { return nil }
+        guard !isInactive, let snapshot, !hasStaleData(at: now) else { return nil }
         return snapshot.meterWindow?.clampedUsedPercent
     }
 }

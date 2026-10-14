@@ -71,6 +71,7 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
         let states = UsageStore.shared.orderedStates
         statusItem?.button?.image = MenuBarIcon.image(states: states, mode: UsageStore.shared.preferences.menuBarMode)
         statusItem?.button?.toolTip = states.map { state in
+            if state.isInactive { return "\(state.provider.displayName): Vypnutá" }
             let detail = state.meterValue().map { "\(state.snapshot?.meterWindow?.name ?? "Quota"): \(UsageFormatting.percent($0)) used" } ?? "current usage unavailable"
             return "\(state.provider.displayName): \(detail)"
         }.joined(separator: "\n")

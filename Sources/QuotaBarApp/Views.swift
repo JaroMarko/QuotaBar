@@ -16,7 +16,7 @@ struct QuotaBarMenuView: View {
                 ForEach(store.orderedStates) { state in
                     ProviderCard(state: state, preferences: store.preferences, nextRetry: store.nextRefreshAt[state.provider])
                 }
-                MenuBarLegend(preferences: store.preferences)
+                MenuBarLegend(preferences: store.preferences, inactiveProviders: Set(store.orderedStates.filter(\.isInactive).map(\.provider)))
                 if let error = store.historyError {
                     Text(error).font(.caption2).foregroundStyle(.orange)
                 }
@@ -68,6 +68,7 @@ struct QuotaBarMenuView: View {
     }
 
     private var lastUpdatedText: String {
+        if store.orderedStates.allSatisfy(\.isInactive) { return "Sledovanie je pozastavené" }
         guard let date = store.lastRefreshAt else { return "Waiting for first refresh" }
         return "Last check \(date.formatted(date: .omitted, time: .shortened))"
     }
@@ -75,8 +76,20 @@ struct QuotaBarMenuView: View {
 
 private struct MenuBarLegend: View {
     @ObservedObject var preferences: AppPreferences
+    let inactiveProviders: Set<ProviderKind>
+    private var explanation: String {
+        let mode = preferences.menuBarMode
+        guard !mode.providers.isEmpty else { return mode.explanation }
+        if mode.providers.allSatisfy({ inactiveProviders.contains($0) }) {
+            return mode.providers.count == 2
+                ? "Apps are off — menu bar shows the QuotaBar icon."
+                : "\(mode.providers[0].displayName) is off — its icon has no quota ring."
+        }
+        return mode.explanation + (mode.providers.contains(where: { inactiveProviders.contains($0) })
+            ? " Rings are hidden for apps that are off." : "")
+    }
     var body: some View {
-        Text(preferences.menuBarMode.explanation).font(.caption2).foregroundStyle(.secondary)
+        Text(explanation).font(.caption2).foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -92,18 +105,22 @@ struct ProviderCard: View {
             HStack {
                 Image(systemName: state.provider.symbolName).foregroundStyle(accent)
                 Text(state.provider.displayName).font(.headline)
-                if let plan = state.snapshot?.plan, !plan.isEmpty {
+                if !state.isInactive, let plan = state.snapshot?.plan, !plan.isEmpty {
                     Text(plan).font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
                 if state.isRefreshing { ProgressView().controlSize(.small) }
+                if !state.isInactive {
                 Button(detailLabel) { QuotaBarDelegate.shared?.showDetails(for: state.provider) }
                     .buttonStyle(.borderless)
                     .font(.caption)
                     .foregroundStyle(.tint)
                     .accessibilityLabel("\(state.provider.displayName) usage details")
+                }
             }
-            if let snapshot = state.snapshot {
+            if state.isInactive {
+                InactiveProviderNotice(provider: state.provider)
+            } else if let snapshot = state.snapshot {
                 HStack(alignment: .top, spacing: 8) {
                     ForEach(overviewWindows) { window in
                         UsageWindowTile(window: window, isMeterWindow: preferences.menuBarMode.providers.contains(state.provider) && window.id == snapshot.meterWindow?.id)
@@ -117,9 +134,9 @@ struct ProviderCard: View {
                         .font(.caption2).foregroundStyle(.orange)
                 }
             }
-            if let error = state.errorMessage {
+            if !state.isInactive, let error = state.errorMessage {
                 ProviderErrorNotice(state: state, message: error, nextRetry: nextRetry)
-            } else if state.snapshot == nil {
+            } else if !state.isInactive && state.snapshot == nil {
                 Text(state.isRefreshing ? "Checking usage…" : "No usage data yet.")
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -146,6 +163,17 @@ struct ProviderCard: View {
     }
 
     private var accent: Color { state.provider == .claude ? .orange : .indigo }
+}
+
+private struct InactiveProviderNotice: View {
+    let provider: ProviderKind
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Label("Vypnutá", systemImage: "power").font(.subheadline.weight(.medium))
+            Text(provider == .claude ? "Spusti Claude alebo Claude Code a sledovanie sa obnoví." : "Spusti Codex alebo ChatGPT a sledovanie sa obnoví.")
+                .font(.caption2)
+        }.foregroundStyle(.secondary)
+    }
 }
 
 private struct ProviderErrorNotice: View {
@@ -242,7 +270,9 @@ struct ProviderDetailsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("\(state.provider.displayName) details").font(.title2.weight(.semibold))
-                    if let snapshot = state.snapshot {
+                    if state.isInactive {
+                        InactiveProviderNotice(provider: state.provider)
+                    } else if let snapshot = state.snapshot {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Measured \(snapshot.fetchedAt.formatted(date: .abbreviated, time: .standard))")
                             Text(snapshot.source ?? "Legacy cached measurement")
@@ -258,7 +288,7 @@ struct ProviderDetailsView: View {
                     } else {
                         Text("No usage data yet.").foregroundStyle(.secondary)
                     }
-                    if let error = state.errorMessage {
+                    if !state.isInactive, let error = state.errorMessage {
                         ProviderErrorNotice(state: state, message: error)
                     }
                 }.padding(20).frame(maxWidth: .infinity, alignment: .leading)

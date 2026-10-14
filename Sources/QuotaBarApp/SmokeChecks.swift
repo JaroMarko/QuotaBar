@@ -20,6 +20,31 @@ actor FixtureProvider: UsageProvider {
     func callCount() -> Int { calls }
 }
 
+private actor ActivityFixtureProvider: UsageProvider {
+    nonisolated let kind: ProviderKind
+    private var calls = 0
+    private var error: ProviderError?
+    private var blockNext = false
+    private var waiter: CheckedContinuation<Void, Never>?
+    init(_ kind: ProviderKind) { self.kind = kind }
+    func fetch() async throws -> UsageSnapshot {
+        calls += 1
+        if blockNext {
+            blockNext = false
+            await withCheckedContinuation { waiter = $0 }
+        }
+        if let error { throw error }
+        return UsageSnapshot(provider: kind, plan: "Fixture", windows: [
+            UsageWindow(id: kind == .claude ? "claude-five_hour" : "weekly", name: "Fixture", usedPercent: 30,
+                resetsAt: Date().addingTimeInterval(3600), durationMinutes: 300)
+        ], fetchedAt: Date())
+    }
+    func callCount() -> Int { calls }
+    func fail(_ error: ProviderError) { self.error = error }
+    func suspendNext() { blockNext = true }
+    func resume() { waiter?.resume(); waiter = nil }
+}
+
 private struct PreviewProvider: UsageProvider {
     let snapshot: UsageSnapshot
     var error: ProviderError? = nil
@@ -94,7 +119,7 @@ enum SmokeChecks {
               pixels(.claude, first) != pixels(.claude, []),
               pixels(.codex, first) != pixels(.codex, []) else { return false }
 
-        let store = UsageStore(providers: [], defaults: defaults)
+        let store = UsageStore(providers: [], defaults: defaults, activityProbe: { _ in true })
         let controller = NSHostingController(rootView: QuotaBarMenuView(store: store, refreshOnAppear: false))
         controller.sizingOptions = [.preferredContentSize]
         controller.view.layoutSubtreeIfNeeded()
@@ -116,7 +141,7 @@ enum SmokeChecks {
         preferences.notification100 = false; preferences.notificationReset = false
         let provider = FixtureProvider()
         let store = UsageStore(providers: [provider], preferences: preferences, defaults: defaults,
-                               historyPersistence: persistence)
+                               historyPersistence: persistence, activityProbe: { _ in true })
         await store.refreshAll(force: true)
         guard let original = store.states[.codex]?.snapshot, !store.isRefreshing else { return false }
         await store.refreshAll(force: true)
@@ -128,7 +153,7 @@ enum SmokeChecks {
         await store.refreshAll(force: true)
         await store.refreshAll(force: true)
         guard await provider.callCount() == 4 else { return false } // even manual refresh respects 429
-        let restarted = UsageStore(providers: [provider], preferences: preferences, defaults: defaults, historyPersistence: persistence)
+        let restarted = UsageStore(providers: [provider], preferences: preferences, defaults: defaults, historyPersistence: persistence, activityProbe: { _ in true })
         await restarted.refreshAll(force: true)
         guard await provider.callCount() == 4, restarted.states[.codex]?.errorHelp != nil,
               restarted.nextRefreshAt[.codex] == store.nextRefreshAt[.codex] else { return false }
@@ -136,7 +161,78 @@ enum SmokeChecks {
         guard let loaded = try? await persistence.load(), loaded.samples.count == 2 else { return false }
         await store.clearHistory()
         guard store.history.samples.isEmpty, (try? await persistence.load())?.samples.isEmpty == true else { return false }
+        guard await verifyActivity() else { return false }
         print("PASS store: stale retention, retry scheduling, manual recovery, 429 cooldown across restart, error help, history persistence/clear")
+        return true
+    }
+
+    private static func verifyActivity() async -> Bool {
+        let name = "QuotaBarActivityChecks.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name) }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let preferences = AppPreferences(defaults: defaults)
+        preferences.notification75 = false; preferences.notification90 = false
+        preferences.notification100 = false; preferences.notificationReset = false
+        let claude = ActivityFixtureProvider(.claude), codex = ActivityFixtureProvider(.codex)
+        var running = Set<ProviderKind>()
+        var unverified = false
+        let store = UsageStore(providers: [claude, codex], preferences: preferences, defaults: defaults,
+            historyPersistence: HistoryPersistence(url: directory.appendingPathComponent("history.json")),
+            activityProbe: { unverified ? nil : running.contains($0) })
+        guard store.orderedStates.allSatisfy({ $0.isInactive && $0.meterValue() == nil }) else { return false }
+        await store.refreshAll(force: true)
+        guard await claude.callCount() == 0, await codex.callCount() == 0 else { return false }
+        running.insert(.claude)
+        await store.refreshAll(force: false)
+        guard await claude.callCount() == 1, await codex.callCount() == 0,
+              store.states[.claude]?.isInactive == false else { return false }
+        running.insert(.codex)
+        await store.refreshAll(force: false)
+        guard await claude.callCount() == 1, await codex.callCount() == 1 else { return false }
+        running.remove(.claude)
+        await store.refreshAll(force: true)
+        guard await claude.callCount() == 1, await codex.callCount() == 2,
+              store.states[.claude]?.isInactive == true, store.states[.claude]?.snapshot != nil,
+              store.states[.claude]?.meterValue() == nil else { return false }
+        running.remove(.codex)
+        await store.refreshAll(force: true)
+        guard await codex.callCount() == 2, store.states[.codex]?.isInactive == true else { return false }
+        running.insert(.claude)
+        await claude.fail(.rateLimited("Claude"))
+        await store.refreshAll(force: false)
+        guard await claude.callCount() == 2 else { return false }
+        let deadline = store.nextRefreshAt[.claude]
+        running.remove(.claude); await store.refreshAll(force: true)
+        running.insert(.claude); await store.refreshAll(force: true)
+        guard await claude.callCount() == 2, store.nextRefreshAt[.claude] == deadline,
+              store.states[.claude]?.errorHelp != nil else { return false }
+        unverified = true
+        await store.refreshAll(force: true)
+        guard store.orderedStates.allSatisfy({ !$0.isInactive && $0.meterValue() == nil && $0.errorHelp != nil }),
+              await codex.callCount() == 2 else { return false }
+        unverified = false
+        running = [.codex]
+        await codex.suspendNext()
+        let pending = Task { await store.refreshAll(force: true) }
+        let timeout = Date().addingTimeInterval(2)
+        while await codex.callCount() < 3 && Date() < timeout { await Task.yield() }
+        guard await codex.callCount() == 3 else { pending.cancel(); return false }
+        running.remove(.codex)
+        await store.refreshAll(force: false)
+        await codex.resume()
+        await pending.value
+        guard store.states[.codex]?.isInactive == true, store.states[.codex]?.meterValue() == nil,
+              store.states[.codex]?.errorMessage == nil else { return false }
+        guard ProviderActivityProbe.matchesCLIName("claude", provider: .claude),
+              ProviderActivityProbe.matchesCLIName("codex", provider: .codex),
+              !ProviderActivityProbe.matchesCLIName("claude-helper", provider: .claude),
+              !ProviderActivityProbe.eligibleProcess(uid: 501, parent: 42, ownUID: 501, ownPID: 42),
+              !ProviderActivityProbe.eligibleProcess(uid: 502, parent: 10, ownUID: 501, ownPID: 42),
+              ProviderActivityProbe.eligibleProcess(uid: 501, parent: 10, ownUID: 501, ownPID: 42) else { return false }
+        print("PASS activity: both off skip requests, independent resume, cached values hidden,429 retained,unknown detection,in-flight stop,own child/UID filters")
+        print("Native activity probe: Claude \(String(describing: ProviderActivityProbe.isRunning(.claude))), Codex \(String(describing: ProviderActivityProbe.isRunning(.codex)))")
         return true
     }
 
@@ -183,7 +279,7 @@ enum SmokeChecks {
         defer { try? FileManager.default.removeItem(at: directory) }
         func makeStore(_ snapshots: [UsageSnapshot], error: ProviderError? = nil) -> UsageStore {
             UsageStore(providers: snapshots.map { PreviewProvider(snapshot: $0, error: error) }, preferences: preferences,
-                defaults: defaults, historyPersistence: HistoryPersistence(url: directory.appendingPathComponent("history.json")))
+                defaults: defaults, historyPersistence: HistoryPersistence(url: directory.appendingPathComponent("history.json")), activityProbe: { _ in true })
         }
         let store = makeStore(snapshots)
         let base = URL(fileURLWithPath: path).deletingPathExtension().path
@@ -203,6 +299,8 @@ enum SmokeChecks {
         let errorStore = makeStore(snapshots, error: .rateLimited("Fixture provider"))
         await errorStore.refreshAll(force: true)
         guard renderPopup(store: errorStore, path: base + "-error.png", appearance: .aqua) else { return false }
+        let inactive = UsageStore(providers: [], preferences: preferences, defaults: defaults, activityProbe: { _ in false })
+        guard renderPopup(store: inactive, path: base + "-inactive.png", appearance: .aqua) else { return false }
         for provider in ProviderKind.allCases { defaults.removeObject(forKey: "cachedSnapshot.\(provider.rawValue)") }
         return renderPopup(store: makeStore([]), path: base + "-unknown.png", appearance: .aqua)
     }
