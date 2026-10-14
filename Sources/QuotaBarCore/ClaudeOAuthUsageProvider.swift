@@ -178,4 +178,3 @@ public enum ClaudeCredentialLoader {
                                 expiresAt: expiry.map { Date(timeIntervalSince1970: $0 / 1000) })
     }
 }
-
