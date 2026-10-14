@@ -68,3 +68,6 @@ Local implementation complete; public notarization and manual long-term GUI/slee
 Preserve authentication, refresh/backoff, notifications, privacy and cache formats. Avoid broad rewrites or speculative micro-optimisations.
 
 Validated: 53 core checks, store integration, live Claude2/Codex1 windows; native light/dark478pt, stale520pt, 20-window543pt, error611pt, unknown260pt previews. Installed1.2.0 signature and binary match. Interactive CUA accessory-app selection remains unavailable.
+
+## Future distribution
+- [ ] Publish QuotaBar through Homebrew, following the earlier shared app release workflow. User-confirmed future goal on2026-10-14; publication has not started.
