@@ -16,9 +16,10 @@ struct QuotaBarMenuView: View {
                 ForEach(store.orderedStates) { state in
                     ProviderCard(state: state)
                 }
-                Text("Rings: Claude 5h · Codex most-used window")
+                Text("Menu bar shows usage: Claude — 5-hour session; Codex — most-used quota window.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if let error = store.historyError {
                     Text(error).font(.caption2).foregroundStyle(.orange)
