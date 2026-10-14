@@ -195,6 +195,30 @@ let otherAccount = UsageSnapshot(provider: .codex, plan: nil, windows: snapshot(
 runner.check(AlertEngine.events(previous: snapshot(used: 70, reset: 100), current: otherAccount, enabledThresholds: [90], resetEnabled: true).isEmpty, "account switch does not fabricate crossing")
 runner.check(AlertEngine.events(previous: snapshot(used: 90, reset: 100), current: snapshot(used: 90, reset: 200), enabledThresholds: [], resetEnabled: true).isEmpty, "reset timestamp alone is not a confirmed reset")
 
+var history = UsageHistory()
+func historicalSnapshot(_ offset: TimeInterval, _ percent: Double, scope: String = "A", resetOffset: TimeInterval = 3600) -> UsageSnapshot {
+    UsageSnapshot(provider: .codex, plan: nil, windows: [
+        UsageWindow(id: "session", name: "Session", usedPercent: percent, resetsAt: measuredAt.addingTimeInterval(resetOffset), durationMinutes: 60)
+    ], fetchedAt: measuredAt.addingTimeInterval(offset), accountID: scope)
+}
+for i in 0...4 { history.append(historicalSnapshot(Double(i) * 300, Double(i) * 10), maximumSamples: 3) }
+runner.check(history.samples.count == 3, "history sample count is bounded")
+let latest = historicalSnapshot(1200, 40)
+let series = history.series(for: latest, window: latest.windows[0])
+runner.check(UsageForecast.estimate(samples: series, now: measuredAt.addingTimeInterval(1200)) != nil, "forecast needs recent multi-point history")
+runner.check(UsageForecast.estimate(samples: Array(series.prefix(2)), now: measuredAt.addingTimeInterval(1200)) == nil, "two samples do not produce forecast")
+runner.check(UsageForecast.estimate(samples: series, now: measuredAt.addingTimeInterval(1901)) == nil, "stale history suppresses forecast")
+let accountB = historicalSnapshot(1200, 40, scope: "B")
+runner.check(history.series(for: accountB, window: accountB.windows[0]).isEmpty, "history isolates accounts")
+let newCycle = historicalSnapshot(1200, 2, resetOffset: 7200)
+runner.check(history.series(for: newCycle, window: newCycle.windows[0]).isEmpty, "history isolates reset cycles")
+var decreasing = UsageHistory()
+for (offset, value) in [(0.0,10.0),(300.0,50.0),(600.0,20.0)] { decreasing.append(historicalSnapshot(offset,value)) }
+runner.check(UsageForecast.estimate(samples: decreasing.samples, now: measuredAt.addingTimeInterval(600)) == nil, "decreasing usage suppresses extrapolation")
+history.prune(now: measuredAt.addingTimeInterval(31 * 86_400))
+runner.check(history.samples.isEmpty, "history retention removes old samples")
+runner.check(UsageForecast.evenUsePercent(window: latest.windows[0], at: measuredAt.addingTimeInterval(1800)) == 50, "even-use guide uses window duration")
+
 print("\nQuotaBar checks: \(runner.passed) passed, \(runner.failed) failed")
 if runner.failed > 0 { exit(1) }
 

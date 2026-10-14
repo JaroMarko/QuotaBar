@@ -18,3 +18,6 @@ Phase 2: release build and 27 checks passed. Graphical rendering and GUI startup
 
 ## Phase 3
 Observed quota changes, >=90% usage and upcoming resets select 60s refresh; quiet quotas select 300s. Failures back off to 900s, 429 cooldown is 600s and manual refresh cannot bypass it. NWPathMonitor and workspace wake/sleep callbacks drive recovery. AlertLedger persists bounded account/window/cycle keys to suppress duplicate crossings across restarts. Claude scope is a nonreversible session-token fingerprint because the usage endpoint supplies no confirmed account identity; rotating login tokens starts a new history scope rather than mixing accounts.
+
+## Phase 4
+History persists only percentages, window/account scope and measurement/reset times in Application Support/QuotaBar/history.json (atomic save, 0700 directory/0600 file). Retention is 30 days/10,000 samples. Malformed existing files are retained rather than overwritten. Charts show the current account/reset cycle and at most 96 recent points. Forecast requires 3 monotonic recent samples spanning >=10 minutes, a fresh last sample and known reset/account scope; it remains explicitly an estimate. Headroom is shown per provider without automated switching.

@@ -12,6 +12,11 @@ final class UsageStore: ObservableObject {
     @Published private(set) var nextRefreshAt: [ProviderKind: Date] = [:]
     @Published private(set) var networkAvailable = true
 
+    @Published private(set) var history = UsageHistory()
+    @Published private(set) var historyError: String?
+    private let historyPersistence = HistoryPersistence()
+    private var historyWritable = true
+
     let preferences: AppPreferences
     private let providers: [any UsageProvider]
     private let notificationService = NotificationService()
@@ -67,11 +72,14 @@ final class UsageStore: ObservableObject {
         }
         networkMonitor.start(queue: DispatchQueue(label: "quotabar.network"))
         refreshLoop = Task { [weak self] in
-            await self?.refreshAll(force: true)
+            guard let self else { return }
+            do { self.history = try await self.historyPersistence.load() }
+            catch { self.historyError = "History could not be loaded; existing file retained."; self.historyWritable = false }
+            await self.refreshAll(force: true)
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 20_000_000_000)
                 guard !Task.isCancelled else { return }
-                await self?.refreshAll(force: false)
+                await self.refreshAll(force: false)
             }
         }
     }
@@ -126,6 +134,11 @@ final class UsageStore: ObservableObject {
                     failures[kind] = 0; rateLimitedUntil[kind] = nil
                     nextRefreshAt[kind] = Date().addingTimeInterval(RefreshPolicy.interval(previous: previous, current: snapshot, now: Date()))
                     Self.cache(snapshot)
+                    history.append(snapshot)
+                    if historyWritable {
+                        do { try await historyPersistence.save(history); historyError = nil }
+                        catch { historyError = "Local history could not be saved." }
+                    }
                     let alerts = ledger.take(previous: previous, current: snapshot,
                         thresholds: preferences.enabledThresholds, resetEnabled: preferences.notificationReset)
                     if let data = try? JSONEncoder().encode(ledger) { UserDefaults.standard.set(data, forKey: "alertLedger") }
@@ -141,6 +154,14 @@ final class UsageStore: ObservableObject {
                 }
             }
         }
+    }
+
+    func clearHistory() async {
+        let empty = UsageHistory()
+        do {
+            try await historyPersistence.save(empty)
+            history = empty; historyError = nil; historyWritable = true
+        } catch { historyError = "Local history could not be cleared." }
     }
 
     private static func cache(_ snapshot: UsageSnapshot) {

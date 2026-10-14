@@ -1,4 +1,5 @@
 import AppKit
+import Charts
 import QuotaBarCore
 import SwiftUI
 
@@ -21,6 +22,7 @@ struct MenuBarLabel: View {
 struct QuotaBarMenuView: View {
     @ObservedObject var store: UsageStore
     @State private var showingAbout = false
+    @State private var confirmingClearHistory = false
 
     var body: some View {
         VStack(spacing: 12) {
@@ -28,17 +30,23 @@ struct QuotaBarMenuView: View {
             ScrollView {
                 VStack(spacing: 10) {
                     ForEach(store.orderedStates) { state in
-                        ProviderCard(state: state)
+                        ProviderCard(state: state, history: store.history)
                     }
                 }
             }
             .frame(maxHeight: 470)
+            capacityOverview
+            if let error = store.historyError { Text(error).font(.caption2).foregroundStyle(.orange) }
             footer
         }
         .padding(14)
         .frame(width: 410)
         .task { await store.refreshIfStale() }
         .sheet(isPresented: $showingAbout) { AboutView() }
+        .confirmationDialog("Clear local usage history?", isPresented: $confirmingClearHistory) {
+            Button("Clear history", role: .destructive) { Task { await store.clearHistory() } }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("Recorded percentages and reset times will be removed. Provider credentials are unaffected.") }
     }
 
     private var header: some View {
@@ -70,12 +78,31 @@ struct QuotaBarMenuView: View {
             }
             .buttonStyle(.borderless)
             Button("About") { showingAbout = true }
+            Button { confirmingClearHistory = true } label: { Image(systemName: "trash") }
+                .help("Clear local usage history")
+
                 .buttonStyle(.borderless)
             Spacer()
             Button("Quit") { NSApplication.shared.terminate(nil) }
                 .buttonStyle(.borderless)
         }
         .font(.caption)
+    }
+
+    private var capacityOverview: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("Available headroom").font(.caption.weight(.semibold))
+            ForEach(store.orderedStates) { state in
+                HStack {
+                    Image(systemName: state.provider.symbolName)
+                    Text(state.provider.displayName)
+                    Spacer()
+                    if let used = state.meterValue() {
+                        Text("\(UsageFormatting.percent(100 - used)) remaining in tightest reported window")
+                    } else { Text("Unconfirmed") }
+                }.font(.caption2).foregroundStyle(.secondary)
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var lastUpdatedText: String {
@@ -86,6 +113,7 @@ struct QuotaBarMenuView: View {
 
 struct ProviderCard: View {
     let state: ProviderDisplayState
+    let history: UsageHistory
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -113,7 +141,7 @@ struct ProviderCard: View {
 
             if let snapshot = state.snapshot {
                 ForEach(snapshot.windows) { window in
-                    UsageWindowRow(window: window, isStale: state.hasStaleData(), isTightest: window.id == snapshot.windows.max(by: { $0.clampedUsedPercent < $1.clampedUsedPercent })?.id)
+                    UsageWindowRow(window: window, isStale: state.hasStaleData(), isTightest: window.id == snapshot.windows.max(by: { $0.clampedUsedPercent < $1.clampedUsedPercent })?.id, samples: history.series(for: snapshot, window: window))
                     if window.id != snapshot.windows.last?.id {
                         Divider().opacity(0.55)
                     }
@@ -160,6 +188,7 @@ struct UsageWindowRow: View {
     let window: UsageWindow
     var isStale = false
     var isTightest = false
+    var samples: [UsageSample] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -187,6 +216,28 @@ struct UsageWindowRow: View {
                 Text("Reset: \(reset.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption2).foregroundStyle(.secondary)
             }
+            if !isStale, let forecast = UsageForecast.estimate(samples: samples, now: Date()) {
+                Text(forecast.estimatedExhaustion.map { "Estimated exhaustion: \($0.formatted(date: .omitted, time: .shortened))" }
+                     ?? "At recent pace: no projected exhaustion before reset")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            DisclosureGroup("Current window history") {
+                if samples.count >= 2 {
+                    Chart(Array(samples.suffix(96))) { sample in
+                        LineMark(x: .value("Time", sample.measuredAt), y: .value("Used", sample.usedPercent), series: .value("Series", "Used"))
+                            .foregroundStyle(.indigo)
+                        if let guide = UsageForecast.evenUsePercent(window: window, at: sample.measuredAt) {
+                            LineMark(x: .value("Time", sample.measuredAt), y: .value("Even use", guide), series: .value("Series", "Even use"))
+                                .foregroundStyle(.secondary).lineStyle(StrokeStyle(lineWidth: 1, dash: [3,3]))
+                        }
+                    }
+                    .chartYScale(domain: 0...100).frame(height: 85)
+                    Text("Solid: measured usage. Dashed: even use over the window.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                } else {
+                    Text("History builds from successful measurements.").font(.caption2).foregroundStyle(.secondary)
+                }
+            }.font(.caption2)
         }
         .opacity(isStale ? 0.55 : 1)
     }
