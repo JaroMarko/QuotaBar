@@ -84,18 +84,19 @@ enum MenuBarIcon {
         colour.setStroke(); progress.stroke()
     }
 
-    // Fixed QuotaBar mark: three bars stay legible at 8pt without resembling a search icon.
-    // Actual usage is represented only by the surrounding provider rings.
+    // Optical small-size variant of the app's Q: taller bowl and a tail inside the letter.
+    // An external handle makes a circular Q look like a magnifier at menu-bar sizes.
     nonisolated private static func drawQuotaMark(diameter: CGFloat, ink: NSColor) {
-        let width = diameter * 0.22
-        let gap = diameter * 0.12
-        let left = 12 - (width * 3 + gap * 2) / 2
-        let baseline = 12 - diameter * 0.44
-        ink.setFill()
-        for (index, height) in [0.36, 0.62, 0.88].enumerated() {
-            let rect = NSRect(x: left + CGFloat(index) * (width + gap), y: baseline,
-                              width: width, height: diameter * height)
-            NSBezierPath(roundedRect: rect, xRadius: width * 0.3, yRadius: width * 0.3).fill()
-        }
+        let bowl = NSBezierPath(ovalIn: NSRect(x: 12 - diameter * 0.35, y: 12 - diameter * 0.42,
+                                             width: diameter * 0.7, height: diameter * 0.84))
+        bowl.lineWidth = max(1.2, diameter * 0.16)
+        ink.setStroke()
+        bowl.stroke()
+        let tail = NSBezierPath()
+        tail.lineWidth = bowl.lineWidth
+        tail.lineCapStyle = .square
+        tail.move(to: NSPoint(x: 12, y: 12 - diameter * 0.08))
+        tail.line(to: NSPoint(x: 12 + diameter * 0.28, y: 12 - diameter * 0.38))
+        tail.stroke()
     }
 }

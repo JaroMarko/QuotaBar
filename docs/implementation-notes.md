@@ -74,3 +74,6 @@ User rejected indigo because it was unreadable on the dark menu bar. Both combin
 
 ## Menu-bar mark (1.3.7)
 User found the circular Q and diagonal tail looked like a search magnifier. Replace only the menu-bar mark with three ascending rounded bars, drawn at8/12/18pt for concentric/semicircle/icon-only modes and inactive fallback. This is a fixed logo; usage remains exclusively in provider rings. The Spotlight app icon remains unchanged. Preserve24pt canvas/28pt item and existing palette/template behaviour.
+
+## Refined app-identity Q (1.3.8)
+User clarified they want the same identity as the app icon, refined for legibility, rather than a replacement bar chart. Restore Q with a taller oval bowl, stronger stroke and a diagonal starting inside the letter, ending at its lower edge. The internal tail removes the external magnifier handle. This optical variant preserves the app identity at8/12/18pt without changing Spotlight artwork or provider rings.
