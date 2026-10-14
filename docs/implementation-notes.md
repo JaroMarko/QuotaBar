@@ -53,3 +53,6 @@ Settings includes Send test notification, permission/error feedback and a pendin
 
 ## App icon (1.2.5)
 Original Q-shaped quota ring,ivory/cyan on a navy rounded square. Vector source and reproducible AppKit renderer committed; ICNS includes16–1024px1x/2x variants. CFBundleIconFile and packaging include the icon. Installed bundle signature/resource matches verified; LaunchServices registration and Spotlight import refreshed. NSWorkspace.icon(forFile:) returns the new artwork for the installed app (visually checked).53 checks,store/menu tests passed.
+
+## Compact menu modes (1.3.0)
+User-approved five modes:concentric default,Claude,Codex,icon-only,semicircles. All use24×24pt canvas and28pt status item instead of64pt. Concentric outer=Claude5h,inner=Codexmost-used; semicircles left=Claude,right=Codex with small separating gaps. Combined modes retain a small Q; single-provider modes retain official logos; icon-only uses Q. Persistent local preference publishes immediate updates. Popup legend and Bar badges observe the same preference. Test coverage includes persistence/invalid fallback,template dimensions,known/unknown states and isolation: changing Codex cannot alter Claude-only or icon-only pixels. No acquisition/notification/history changes.

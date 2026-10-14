@@ -14,13 +14,9 @@ struct QuotaBarMenuView: View {
             VStack(spacing: 10) {
                 header
                 ForEach(store.orderedStates) { state in
-                    ProviderCard(state: state)
+                    ProviderCard(state: state, preferences: store.preferences)
                 }
-                Text("Menu bar shows usage: Claude — 5-hour session; Codex — most-used quota window.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                MenuBarLegend(preferences: store.preferences)
                 if let error = store.historyError {
                     Text(error).font(.caption2).foregroundStyle(.orange)
                 }
@@ -77,8 +73,18 @@ struct QuotaBarMenuView: View {
     }
 }
 
+private struct MenuBarLegend: View {
+    @ObservedObject var preferences: AppPreferences
+    var body: some View {
+        Text(preferences.menuBarMode.explanation).font(.caption2).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 struct ProviderCard: View {
     let state: ProviderDisplayState
+    @ObservedObject var preferences: AppPreferences
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -99,7 +105,7 @@ struct ProviderCard: View {
             if let snapshot = state.snapshot {
                 HStack(alignment: .top, spacing: 8) {
                     ForEach(overviewWindows) { window in
-                        UsageWindowTile(window: window, isMeterWindow: window.id == snapshot.meterWindow?.id)
+                        UsageWindowTile(window: window, isMeterWindow: preferences.menuBarMode.providers.contains(state.provider) && window.id == snapshot.meterWindow?.id)
                     }
                 }
                 if state.provider == .claude && snapshot.meterWindow == nil {
@@ -304,6 +310,13 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section("Menu bar") {
+                Picker("Display", selection: $preferences.menuBarMode) {
+                    ForEach(MenuBarMode.allCases) { mode in Text(mode.title).tag(mode) }
+                }
+                Text(preferences.menuBarMode.explanation).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Section("General") {
                 Toggle("Launch QuotaBar at login", isOn: $preferences.launchAtLogin)
                 Text("Adaptive refresh: every 1–5 minutes, on wake and network recovery. Errors slow retries.")
@@ -339,7 +352,7 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .padding(8)
-        .frame(width: 460, height: 500)
+        .frame(width: 460, height: 600)
     }
 }
 

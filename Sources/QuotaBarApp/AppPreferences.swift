@@ -2,15 +2,51 @@ import Foundation
 import QuotaBarCore
 import ServiceManagement
 
+enum MenuBarMode: String, CaseIterable, Identifiable {
+    case concentric, claude, codex, iconOnly, semicircles
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .concentric: "Both — concentric rings"
+        case .claude: "Claude only"
+        case .codex: "Codex only"
+        case .iconOnly: "QuotaBar icon only"
+        case .semicircles: "Both — semicircles"
+        }
+    }
+    var providers: [ProviderKind] {
+        switch self {
+        case .claude: [.claude]
+        case .codex: [.codex]
+        case .concentric, .semicircles: [.claude, .codex]
+        case .iconOnly: []
+        }
+    }
+    var explanation: String {
+        switch self {
+        case .concentric: "Used quota: outer ring Claude 5h; inner ring Codex most-used window."
+        case .claude: "Menu bar shows used quota: Claude 5-hour session."
+        case .codex: "Menu bar shows used quota: Codex most-used window."
+        case .iconOnly: "Menu bar shows the QuotaBar icon; quota details are shown in this popup."
+        case .semicircles: "Used quota: left half Claude 5h; right half Codex most-used window."
+        }
+    }
+}
+
 @MainActor
 final class AppPreferences: ObservableObject {
     private enum Key {
+        static let menuBarMode = "menuBarMode"
         static let launchAtLogin = "launchAtLogin"
         static let notification75 = "notification75"
         static let notification90 = "notification90"
         static let notification100 = "notification100"
         static let notificationReset = "notificationReset"
         static let defaultsRegistered = "defaultsRegistered"
+    }
+
+    @Published var menuBarMode: MenuBarMode {
+        didSet { defaults.set(menuBarMode.rawValue, forKey: Key.menuBarMode) }
     }
 
     @Published var launchAtLogin: Bool {
@@ -29,6 +65,7 @@ final class AppPreferences: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        menuBarMode = defaults.string(forKey: Key.menuBarMode).flatMap(MenuBarMode.init(rawValue:)) ?? .concentric
         if !defaults.bool(forKey: Key.defaultsRegistered) {
             defaults.set(true, forKey: Key.launchAtLogin)
             defaults.set(true, forKey: Key.notification75)

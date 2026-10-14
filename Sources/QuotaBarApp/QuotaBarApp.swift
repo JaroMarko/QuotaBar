@@ -13,6 +13,7 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
     private var settingsWindow: NSWindow?
     private var detailWindows: [ProviderKind: NSWindow] = [:]
     private var subscription: AnyCancellable?
+    private var preferencesSubscription: AnyCancellable?
     private var timer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -47,6 +48,9 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
         subscription = store.objectWillChange.sink { [weak self] in
             DispatchQueue.main.async { self?.updateIcon() }
         }
+        preferencesSubscription = store.preferences.objectWillChange.sink { [weak self] in
+            DispatchQueue.main.async { self?.updateIcon() }
+        }
         timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.updateIcon() }
         }
@@ -65,12 +69,12 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
 
     private func updateIcon() {
         let states = UsageStore.shared.orderedStates
-        statusItem?.button?.image = MenuBarIcon.image(states: states)
+        statusItem?.button?.image = MenuBarIcon.image(states: states, mode: UsageStore.shared.preferences.menuBarMode)
         statusItem?.button?.toolTip = states.map { state in
             let detail = state.meterValue().map { "\(state.snapshot?.meterWindow?.name ?? "Quota"): \(UsageFormatting.percent($0)) used" } ?? "current usage unavailable"
             return "\(state.provider.displayName): \(detail)"
         }.joined(separator: "\n")
-        statusItem?.button?.setAccessibilityLabel("QuotaBar: Claude and Codex quota meters")
+        statusItem?.button?.setAccessibilityLabel("QuotaBar. " + UsageStore.shared.preferences.menuBarMode.explanation)
     }
 
     @objc private func handleStatusClick() {
@@ -119,7 +123,7 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
     func showSettings() {
         popover.performClose(nil)
         if settingsWindow == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0,y: 0,width: 460,height: 500),
+            let window = NSWindow(contentRect: NSRect(x: 0,y: 0,width: 460,height: 600),
                 styleMask: [.titled,.closable], backing: .buffered, defer: false)
             window.title = "QuotaBar Settings"; window.isReleasedWhenClosed = false
             window.contentViewController = NSHostingController(rootView: SettingsView(preferences: UsageStore.shared.preferences))

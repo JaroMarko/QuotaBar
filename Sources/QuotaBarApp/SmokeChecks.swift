@@ -57,13 +57,50 @@ enum SmokeChecks {
         let name = "QuotaBarMenuChecks.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!
         defer { defaults.removePersistentDomain(forName: name) }
+        let preferences = AppPreferences(defaults: defaults)
+        guard preferences.menuBarMode == .concentric else { return false }
+        for mode in MenuBarMode.allCases {
+            preferences.menuBarMode = mode
+            guard AppPreferences(defaults: defaults).menuBarMode == mode,
+                  MenuBarIcon.image(states: [], mode: mode).size == NSSize(width: 24, height: 24),
+                  MenuBarIcon.image(states: [], mode: mode).isTemplate else { return false }
+        }
+        defaults.set("invalid-future-mode", forKey: "menuBarMode")
+        guard AppPreferences(defaults: defaults).menuBarMode == .concentric,
+              MenuBarMode.iconOnly.providers.isEmpty,
+              MenuBarMode.claude.providers == [.claude], MenuBarMode.codex.providers == [.codex] else { return false }
+        defaults.removeObject(forKey: "menuBarMode")
+        let now = Date()
+        func states(_ claude: Double, _ codex: Double) -> [ProviderDisplayState] {
+            zip([ProviderKind.claude, .codex], [claude, codex]).map { provider, value in
+                ProviderDisplayState(provider: provider, snapshot: UsageSnapshot(provider: provider, plan: nil,
+                    windows: [UsageWindow(id: provider == .claude ? "claude-five_hour" : "weekly", name: "Fixture", usedPercent: value,
+                        resetsAt: now.addingTimeInterval(3600), durationMinutes: 300)], fetchedAt: now),
+                    errorMessage: nil, isRefreshing: false, isStale: false)
+            }
+        }
+        func pixels(_ mode: MenuBarMode, _ states: [ProviderDisplayState]) -> Data? {
+            guard let tiff = MenuBarIcon.image(states: states, mode: mode, now: now).tiffRepresentation,
+                  let bitmap = NSBitmapImageRep(data: tiff) else { return nil }
+            return bitmap.representation(using: .png, properties: [:])
+        }
+        let first = states(20, 30), second = states(20, 80)
+        guard let claudePixels = pixels(.claude, first),
+              claudePixels == pixels(.claude, second),
+              pixels(.codex, first) != pixels(.codex, second),
+              pixels(.concentric, first) != pixels(.concentric, second),
+              pixels(.semicircles, first) != pixels(.semicircles, second),
+              pixels(.iconOnly, first) == pixels(.iconOnly, second),
+              pixels(.claude, first) != pixels(.claude, []),
+              pixels(.codex, first) != pixels(.codex, []) else { return false }
+
         let store = UsageStore(providers: [], defaults: defaults)
         let controller = NSHostingController(rootView: QuotaBarMenuView(store: store, refreshOnAppear: false))
         controller.sizingOptions = [.preferredContentSize]
         controller.view.layoutSubtreeIfNeeded()
         let size = controller.view.fittingSize
         guard size.width == 410, size.height > 150, size.height < 350 else { return false }
-        print("PASS menu: hosted size \(size), centred anchor, left/right/control click routing, Quit target, test notification payload")
+        print("PASS menu: hosted size \(size), centred anchor, left/right/control click routing, Quit target, test notification payload, five persisted 24pt modes")
         return true
     }
 
@@ -187,21 +224,32 @@ enum SmokeChecks {
     static func writeIconPreview(path: String) {
         let now = Date()
         let combinations: [(Double?, Double?)] = [(10,25),(60,85),(100,100),(nil,nil)]
+        let modes = MenuBarMode.allCases
         print("Provider artwork loaded: Claude \(MenuBarIcon.hasClaudeArtwork), OpenAI \(MenuBarIcon.hasOpenAIArtwork)")
-        let image = NSImage(size: NSSize(width: 440, height: 100), flipped: false) { _ in
-            NSColor.white.setFill(); NSBezierPath(rect: NSRect(x: 0,y: 0,width: 440,height: 100)).fill()
-            for (index, values) in combinations.enumerated() {
+        let image = NSImage(size: NSSize(width: 720, height: 320), flipped: false) { _ in
+            NSColor.white.setFill(); NSBezierPath(rect: NSRect(x: 0, y: 0, width: 720, height: 320)).fill()
+            let labels = ["Concentric", "Claude", "Codex", "Icon only", "Semicircles"]
+            for (index, label) in labels.enumerated() {
+                (label as NSString).draw(at: NSPoint(x: 130 + index * 116, y: 290),
+                    withAttributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.black])
+            }
+            for (row, values) in combinations.enumerated() {
                 let states = zip([ProviderKind.claude,.codex], [values.0,values.1]).map { kind, used in
                     ProviderDisplayState(provider: kind, snapshot: used.map { value in
                         UsageSnapshot(provider: kind, plan: nil, windows: [UsageWindow(id: kind == .claude ? "claude-five_hour" : "fixture", name: "Fixture", usedPercent: value,
                             resetsAt: now.addingTimeInterval(3600), durationMinutes: 60)], fetchedAt: now)
                     }, errorMessage: nil, isRefreshing: false, isStale: false)
                 }
-                let icon = MenuBarIcon.image(states: states, now: now)
-                icon.draw(in: NSRect(x: 24 + CGFloat(index)*110,y: 48,width: MenuBarIcon.size.width,height: MenuBarIcon.size.height))
+                let y = CGFloat(224 - row * 65)
                 let label = values.0 == nil ? "Unavailable" : "\(Int(values.0!)) / \(Int(values.1!))% used"
-                (label as NSString).draw(at: NSPoint(x: 14 + CGFloat(index)*110,y: 15),
+                (label as NSString).draw(at: NSPoint(x: 8, y: y + 12),
                     withAttributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: NSColor.black])
+                for (column, mode) in modes.enumerated() {
+                    let icon = MenuBarIcon.image(states: states, mode: mode, now: now)
+                    let x = CGFloat(130 + column * 116)
+                    icon.draw(in: NSRect(x: x, y: y + 12, width: 24, height: 24))
+                    icon.draw(in: NSRect(x: x + 32, y: y, width: 48, height: 48))
+                }
             }
             return true
         }

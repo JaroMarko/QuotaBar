@@ -28,7 +28,7 @@ The app build uses the native SwiftPM build system and macOS 26.5 SDK when avail
 
 ## Monitoring and privacy
 
-- Menu bar: graphical Claude spark and official OpenAI Blossom for Codex, inside consumed-quota rings, no text. Claude displays the shared 5-hour session; Codex displays its most-used reported window. Dotted rings mean current data is unavailable/stale, including a missing Claude 5h value.
+- Menu bar: one compact24pt image (28pt status item), no text. Settings selects concentric rings (default:outer Claude,inner Codex),left/right semicircles (Claude/Codex),Claude only,Codex only or QuotaBar icon only. Provider-only modes retain their logo; combined modes have QuotaBar Q in the centre. Claude displays the shared 5-hour session; Codex displays its most-used reported window. Dotted rings mean current data is unavailable/stale, including a missing Claude 5h value.
 - Interaction: left-click opens/closes the centred popup; right-click or Control-click opens a native Quit menu. Popup size follows the current content; macOS keeps it within screen edges.
 - Popup: shared quota tiles side by side, circular usage rings with centred percentages and reset countdowns without scrolling. A Bar badge marks the ring window. Additional model windows, history, forecast, exact resets and source/account diagnostics are available in separate resizable Details windows. Claude's usage endpoint does not supply confirmed account identity; its history is scoped to an opaque session fingerprint. Token renewal starts a new scope.
 - Refresh: 1 minute while usage changes, usage is high or reset is near; 5 minutes when quiet. Errors back off to 15 minutes, and 429 responses enforce a 10-minute cooldown even for manual refresh.
