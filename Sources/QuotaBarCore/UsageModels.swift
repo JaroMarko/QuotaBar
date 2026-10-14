@@ -94,6 +94,27 @@ public enum ProviderError: LocalizedError, Equatable, Sendable {
     case accessDenied(String)
     case expiredCredentials(String)
 
+    public var recoveryExplanation: String {
+        switch self {
+        case .rateLimited:
+            "The provider temporarily rejected requests to read usage (HTTP 429). This does not by itself mean your subscription quota is exhausted. QuotaBar pauses checks for 10 minutes, then retries automatically. The provider may continue limiting requests after that. Shown percentages are last known values. Refresh and restarting QuotaBar do not bypass this pause."
+        case .networkUnavailable:
+            "Usage could not be checked because the network is unavailable. Last known values are retained; QuotaBar retries when connectivity recovers."
+        case .notSignedIn, .expiredCredentials:
+            "Sign in again using the provider's official CLI. QuotaBar reads that existing login and does not store your password."
+        case .accessDenied:
+            "The provider refused access. Check your provider subscription and any macOS Keychain permission prompt."
+        case .executableMissing:
+            "Install the provider's official CLI and sign in before refreshing."
+        case .timedOut:
+            "The provider took too long to respond. QuotaBar keeps the last known values and retries automatically."
+        case .invalidResponse:
+            "The provider returned data QuotaBar could not read. This does not confirm a zero or exhausted quota."
+        case .unavailable:
+            "A current measurement is unavailable. Last known values, if present, may be outdated. QuotaBar will retry automatically."
+        }
+    }
+
     public var errorDescription: String? {
         switch self {
         case let .executableMissing(name):
@@ -103,7 +124,7 @@ public enum ProviderError: LocalizedError, Equatable, Sendable {
         case let .timedOut(name):
             "\(name) did not respond in time."
         case let .rateLimited(name):
-            "\(name) is temporarily rate limited."
+            "\(name) is temporarily limiting quota checks."
         case let .invalidResponse(name):
             "\(name) returned usage data QuotaBar could not read."
         case let .networkUnavailable(name):
@@ -127,13 +148,15 @@ public struct ProviderDisplayState: Identifiable, Sendable {
     public let provider: ProviderKind
     public var snapshot: UsageSnapshot?
     public var errorMessage: String?
+    public var errorHelp: String?
     public var isRefreshing: Bool
     public var isStale: Bool
 
-    public init(provider: ProviderKind, snapshot: UsageSnapshot?, errorMessage: String?, isRefreshing: Bool, isStale: Bool) {
+    public init(provider: ProviderKind, snapshot: UsageSnapshot?, errorMessage: String?, isRefreshing: Bool, isStale: Bool, errorHelp: String? = nil) {
         self.provider = provider
         self.snapshot = snapshot
         self.errorMessage = errorMessage
+        self.errorHelp = errorHelp
         self.isRefreshing = isRefreshing
         self.isStale = isStale
     }

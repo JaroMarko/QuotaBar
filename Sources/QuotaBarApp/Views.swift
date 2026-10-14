@@ -14,7 +14,7 @@ struct QuotaBarMenuView: View {
             VStack(spacing: 10) {
                 header
                 ForEach(store.orderedStates) { state in
-                    ProviderCard(state: state, preferences: store.preferences)
+                    ProviderCard(state: state, preferences: store.preferences, nextRetry: store.nextRefreshAt[state.provider])
                 }
                 MenuBarLegend(preferences: store.preferences)
                 if let error = store.historyError {
@@ -85,6 +85,7 @@ private struct MenuBarLegend: View {
 struct ProviderCard: View {
     let state: ProviderDisplayState
     @ObservedObject var preferences: AppPreferences
+    var nextRetry: Date?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -117,9 +118,7 @@ struct ProviderCard: View {
                 }
             }
             if let error = state.errorMessage {
-                Label(state.hasStaleData() ? "Last known usage · \(error)" : error, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption2).foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
+                ProviderErrorNotice(state: state, message: error, nextRetry: nextRetry)
             } else if state.snapshot == nil {
                 Text(state.isRefreshing ? "Checking usage…" : "No usage data yet.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -147,6 +146,41 @@ struct ProviderCard: View {
     }
 
     private var accent: Color { state.provider == .claude ? .orange : .indigo }
+}
+
+private struct ProviderErrorNotice: View {
+    let state: ProviderDisplayState
+    let message: String
+    var nextRetry: Date? = nil
+    @State private var showingHelp = false
+
+    private var explanation: String {
+        state.errorHelp ?? "Current usage is unavailable. Shown percentages, if present, are last known values. QuotaBar will retry automatically."
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .top, spacing: 6) {
+                Label(state.hasStaleData() ? "Last known usage · \(message)" : message, systemImage: "exclamationmark.triangle.fill")
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Button { showingHelp.toggle() } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+                .buttonStyle(.borderless).help(explanation)
+                .accessibilityLabel("Explain \(state.provider.displayName) quota error")
+                .popover(isPresented: $showingHelp) {
+                    Text(explanation).font(.callout).padding(14).frame(width: 300)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .foregroundStyle(.orange)
+            if let nextRetry {
+                Text(nextRetry > Date() ? "Next attempt: \(nextRetry.formatted(date: .omitted, time: .shortened))" : "Waiting for the next automatic attempt")
+                    .foregroundStyle(.secondary)
+            }
+        }.font(.caption2)
+    }
 }
 
 struct UsageWindowTile: View {
@@ -225,8 +259,7 @@ struct ProviderDetailsView: View {
                         Text("No usage data yet.").foregroundStyle(.secondary)
                     }
                     if let error = state.errorMessage {
-                        Label(error, systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption).foregroundStyle(.orange)
+                        ProviderErrorNotice(state: state, message: error)
                     }
                 }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
             }

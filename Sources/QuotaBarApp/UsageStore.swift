@@ -46,6 +46,18 @@ final class UsageStore: ObservableObject {
             return (kind, ProviderDisplayState(provider: kind, snapshot: cached,
                 errorMessage: nil, isRefreshing: false, isStale: cached != nil))
         })
+        // Keep the server-error pause across app updates/restarts as well.
+        for kind in ProviderKind.allCases {
+            let key = "rateLimitedUntil.\(kind.rawValue)"
+            if let until = defaults.object(forKey: key) as? Date,
+               until > Date(), until.timeIntervalSinceNow <= 600 {
+                rateLimitedUntil[kind] = until
+                nextRefreshAt[kind] = until
+                let error = ProviderError.rateLimited(kind.displayName)
+                states[kind]?.errorMessage = error.errorDescription
+                states[kind]?.errorHelp = error.recoveryExplanation
+            } else { defaults.removeObject(forKey: key) }
+        }
     }
 
     deinit {
@@ -75,6 +87,7 @@ final class UsageStore: ObservableObject {
                     for kind in ProviderKind.allCases {
                         self.states[kind]?.isStale = self.states[kind]?.snapshot != nil
                         self.states[kind]?.errorMessage = "Offline — waiting for the network"
+                        self.states[kind]?.errorHelp = ProviderError.networkUnavailable(kind.displayName).recoveryExplanation
                     }
                 }
                 if recovered { await self.refreshAll(force: true) }
@@ -115,6 +128,7 @@ final class UsageStore: ObservableObject {
             for provider in selected {
                 states[provider.kind]?.isStale = states[provider.kind]?.snapshot != nil
                 states[provider.kind]?.errorMessage = "Offline — waiting for the network"
+                states[provider.kind]?.errorHelp = ProviderError.networkUnavailable(provider.kind.displayName).recoveryExplanation
             }
             return
         }
@@ -142,6 +156,7 @@ final class UsageStore: ObservableObject {
                     states[kind] = ProviderDisplayState(provider: kind, snapshot: snapshot,
                         errorMessage: nil, isRefreshing: false, isStale: false)
                     failures[kind] = 0; rateLimitedUntil[kind] = nil
+                    defaults.removeObject(forKey: "rateLimitedUntil.\(kind.rawValue)")
                     nextRefreshAt[kind] = Date().addingTimeInterval(RefreshPolicy.interval(previous: previous, current: snapshot, now: Date()))
                     Self.cache(snapshot, defaults: defaults)
                     history.append(snapshot)
@@ -157,10 +172,14 @@ final class UsageStore: ObservableObject {
                     failures[kind, default: 0] += 1
                     let delay = RefreshPolicy.retryInterval(failures: failures[kind] ?? 1, error: error as? ProviderError)
                     nextRefreshAt[kind] = Date().addingTimeInterval(delay)
-                    if case ProviderError.rateLimited = error { rateLimitedUntil[kind] = nextRefreshAt[kind] }
+                    if case ProviderError.rateLimited = error {
+                        rateLimitedUntil[kind] = nextRefreshAt[kind]
+                        defaults.set(nextRefreshAt[kind], forKey: "rateLimitedUntil.\(kind.rawValue)")
+                    }
                     states[kind] = ProviderDisplayState(provider: kind, snapshot: previous,
                         errorMessage: (error as? LocalizedError)?.errorDescription ?? "Usage unavailable. Check provider login and permissions.",
-                        isRefreshing: false, isStale: previous != nil)
+                        isRefreshing: false, isStale: previous != nil,
+                        errorHelp: (error as? ProviderError)?.recoveryExplanation)
                 }
             }
         }

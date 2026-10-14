@@ -56,3 +56,6 @@ Original Q-shaped quota ring,ivory/cyan on a navy rounded square. Vector source 
 
 ## Compact menu modes (1.3.0)
 User-approved five modes:concentric default,Claude,Codex,icon-only,semicircles. All use24×24pt canvas and28pt status item instead of64pt. Concentric outer=Claude5h,inner=Codexmost-used; semicircles left=Claude,right=Codex with small separating gaps. Combined modes retain a small Q; single-provider modes retain official logos; icon-only uses Q. Persistent local preference publishes immediate updates. Popup legend and Bar badges observe the same preference. Test coverage includes persistence/invalid fallback,template dimensions,known/unknown states and isolation: changing Codex cannot alter Claude-only or icon-only pixels. No acquisition/notification/history changes.
+
+## Error explanations and restart cooldown (1.3.1)
+Typed provider recovery text exposed with ? hover/click help in main popup and Details; main shows next scheduled retry. Offline updates reset help consistently. Persist600s429 deadline in existing defaults domain,restore only future bounded deadlines,clear after success. Restart fixture confirms no extra request during cooldown.53 checks,store/menu tests and rate-limited popup preview passed. Provider documentation and alternative statusline data route recorded in data-sources-2026-10-14.md; alternative is not yet implemented.

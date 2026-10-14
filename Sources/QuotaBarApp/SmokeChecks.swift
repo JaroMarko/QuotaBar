@@ -128,10 +128,15 @@ enum SmokeChecks {
         await store.refreshAll(force: true)
         await store.refreshAll(force: true)
         guard await provider.callCount() == 4 else { return false } // even manual refresh respects 429
+        let restarted = UsageStore(providers: [provider], preferences: preferences, defaults: defaults, historyPersistence: persistence)
+        await restarted.refreshAll(force: true)
+        guard await provider.callCount() == 4, restarted.states[.codex]?.errorHelp != nil,
+              restarted.nextRefreshAt[.codex] == store.nextRefreshAt[.codex] else { return false }
+
         guard let loaded = try? await persistence.load(), loaded.samples.count == 2 else { return false }
         await store.clearHistory()
         guard store.history.samples.isEmpty, (try? await persistence.load())?.samples.isEmpty == true else { return false }
-        print("PASS store: stale retention, retry scheduling, manual recovery, 429 cooldown, history persistence/clear")
+        print("PASS store: stale retention, retry scheduling, manual recovery, 429 cooldown across restart, error help, history persistence/clear")
         return true
     }
 
@@ -195,7 +200,7 @@ enum SmokeChecks {
         let extraStore = makeStore(extraSnapshots)
         await extraStore.refreshAll(force: true)
         guard renderPopup(store: extraStore, path: base + "-extra.png", appearance: .aqua) else { return false }
-        let errorStore = makeStore(snapshots, error: .expiredCredentials("Fixture provider"))
+        let errorStore = makeStore(snapshots, error: .rateLimited("Fixture provider"))
         await errorStore.refreshAll(force: true)
         guard renderPopup(store: errorStore, path: base + "-error.png", appearance: .aqua) else { return false }
         for provider in ProviderKind.allCases { defaults.removeObject(forKey: "cachedSnapshot.\(provider.rawValue)") }
