@@ -40,7 +40,8 @@ public struct UsageHistory: Codable, Sendable {
     }
 
     public func series(for snapshot: UsageSnapshot, window: UsageWindow) -> [UsageSample] {
-        samples.filter { $0.provider == snapshot.provider && $0.accountScope == snapshot.accountScope
+        guard window.resetsAt != nil else { return [] }
+        return samples.filter { $0.provider == snapshot.provider && $0.accountScope == snapshot.accountScope
             && $0.windowID == window.id && $0.resetsAt == window.resetsAt }
             .sorted { $0.measuredAt < $1.measuredAt }
     }

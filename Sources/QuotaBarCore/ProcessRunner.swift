@@ -7,7 +7,7 @@ public struct ProcessResult: Sendable {
     public let exitCode: Int32
 }
 
-public enum ProcessRunnerError: Error { case timedOut }
+public enum ProcessRunnerError: Error { case timedOut, inputTooLarge }
 
 // Drain both pipes while the child runs: waiting before reading can deadlock
 // on a full pipe. Retain at most 1 MiB; still drain additional bytes.
@@ -60,6 +60,7 @@ final class PipeCapture: @unchecked Sendable {
 public enum ProcessRunner {
     public static func run(executable: URL, arguments: [String], standardInput: Data? = nil,
                            timeout: TimeInterval) throws -> ProcessResult {
+        guard (standardInput?.count ?? 0) <= 4096 else { throw ProcessRunnerError.inputTooLarge }
         let process = Process()
         let output = Pipe(), error = Pipe(), input = Pipe()
         let completion = DispatchSemaphore(value: 0)
@@ -71,6 +72,7 @@ public enum ProcessRunner {
         let outCapture = PipeCapture(output.fileHandleForReading)
         let errCapture = PipeCapture(error.fileHandleForReading)
         defer {
+            terminate(process)
             try? input.fileHandleForWriting.close()
             _ = outCapture.finish(); _ = errCapture.finish()
         }

@@ -3,22 +3,6 @@ import Charts
 import QuotaBarCore
 import SwiftUI
 
-struct MenuBarLabel: View {
-    @ObservedObject var store: UsageStore
-
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { context in
-            Image(nsImage: MenuBarIcon.image(states: store.orderedStates, now: context.date))
-                .accessibilityLabel(store.orderedStates.map { state in
-                    if let value = state.meterValue(at: context.date) {
-                        return "\(state.provider.displayName): \(UsageFormatting.percent(value)) used"
-                    }
-                    return "\(state.provider.displayName): current usage unavailable"
-                }.joined(separator: ", "))
-        }
-    }
-}
-
 struct QuotaBarMenuView: View {
     @ObservedObject var store: UsageStore
     @State private var showingAbout = false
@@ -73,14 +57,14 @@ struct QuotaBarMenuView: View {
 
     private var footer: some View {
         HStack(spacing: 14) {
-            SettingsLink {
+            Button { QuotaBarDelegate.shared?.showSettings() } label: {
                 Label("Settings", systemImage: "gearshape")
             }
             .buttonStyle(.borderless)
             Button("About") { showingAbout = true }
+                .buttonStyle(.borderless)
             Button { confirmingClearHistory = true } label: { Image(systemName: "trash") }
                 .help("Clear local usage history")
-
                 .buttonStyle(.borderless)
             Spacer()
             Button("Quit") { NSApplication.shared.terminate(nil) }
@@ -235,7 +219,7 @@ struct UsageWindowRow: View {
                     Text("Solid: measured usage. Dashed: even use over the window.")
                         .font(.caption2).foregroundStyle(.secondary)
                 } else {
-                    Text("History builds from successful measurements.").font(.caption2).foregroundStyle(.secondary)
+                    Text("History builds from successful measurements with a known reset.").font(.caption2).foregroundStyle(.secondary)
                 }
             }.font(.caption2)
         }
@@ -294,7 +278,7 @@ struct AboutView: View {
                 .foregroundStyle(.indigo)
             Text("QuotaBar")
                 .font(.title2.weight(.semibold))
-            Text("Version 1.0.0")
+            Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development")")
                 .foregroundStyle(.secondary)
             Text("A private, local-first meter for Claude and Codex subscription usage. No analytics, telemetry, or credential storage.")
                 .multilineTextAlignment(.center)

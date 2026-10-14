@@ -9,7 +9,7 @@ Deliver a functioning local macOS Claude/Codex quota monitor with graphical menu
 - [x] 2. Add graphical provider icons without text, quota details and freshness/account/source display.
 - [x] 3. Adaptive refresh, wake/offline recovery, notification deduplication and confirmed resets.
 - [x] 4. Bounded local history, charts and conservative pace/forecast; alternative provider overview.
-- [ ] 5. Build/package checks, app installation, documented limitations and memory update.
+- [x] 5. Build/package checks, app installation, documented limitations and memory update.
 
 ## Scope
 No new backend, telemetry, provider purchases, account switching, mobile sync or leaderboard. No push requested. Use existing provider logins without rewriting auth files. Signing/notarization for public distribution depends on an existing Developer ID identity; do not claim notarization without it.
@@ -25,8 +25,14 @@ No new backend, telemetry, provider purchases, account switching, mobile sync or
 
 - Phase 4 diff check found trailing whitespace; removed before commit.
 
+- Phase 5 app smoke hung during SwiftUI MenuBarExtra image-update startup; stack sampling identified the main-thread loop. Replaced MenuBarExtra with native NSStatusItem and hosted SwiftUI content.
+
+- Package expansion carried FinderInfo on its app root; packaging now strips only signature-invalid attributes and verifies staging before building. Validate expanded contents separately from extraction metadata.
+
+- macOS Python lacks os.listxattr; packaging attribute cleanup uses the native xattr utility instead.
+
 ## Status
-Phase 5: packaging, application smoke verification and final review.
+Local implementation complete; public notarization and manual long-term GUI/sleep/wake verification remain external follow-ups.
 
 ## Acceptance criteria
 1. Both live provider checks return nonempty validated quota windows; noisy child and stuck child probes terminate within bounds.
@@ -41,3 +47,13 @@ Phase 5: packaging, application smoke verification and final review.
 - Phase 3: release build and 35 checks passed. Real sleep/wake and GUI network recovery still need system-level verification.
 
 - Phase 4: release build and 44 checks passed, including account/reset isolation, retention and forecast guards.
+
+## Final verification
+- Release 1.1.0 builds; local ad-hoc codesign validates.
+- 47 core regression checks passed; application store integration checks passed.
+- Both live provider probes and actual application startup report passed (Claude 2 windows, Codex 1; neither stale).
+- Installer expanded successfully; app signature valid after expansion and binary SHA-256 matches the build.
+- Final app installed at /Applications/QuotaBar.app; previous version retained in workspace work backup.
+- No Developer ID identities found; public notarization unavailable.
+- CUA cannot select the accessory app; Finder screenshot returned blank. Native icon rendering was inspected, but full interactive GUI and real sleep/wake remain unverified.
+- Packaging emits four platform metadata write warnings; staging and final expanded signature/hash validation pass.

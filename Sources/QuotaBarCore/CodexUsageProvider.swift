@@ -66,7 +66,7 @@ private enum CodexRPCSession {
             "id": 1,
             "method": "initialize",
             "params": [
-                "clientInfo": ["name": "QuotaBar", "version": "1.0.0"],
+                "clientInfo": ["name": "QuotaBar", "version": "1.1.0"],
                 "capabilities": ["experimentalApi": false]
             ]
         ], to: inputPipe.fileHandleForWriting)
@@ -232,7 +232,7 @@ public enum CodexUsageDecoder {
             id: id,
             name: name,
             usedPercent: used,
-            resetsAt: resetSeconds.map(Date.init(timeIntervalSince1970:)),
+            resetsAt: resetSeconds.flatMap { $0.isFinite ? Date(timeIntervalSince1970: $0) : nil },
             durationMinutes: minutes
         )
     }

@@ -219,6 +219,18 @@ history.prune(now: measuredAt.addingTimeInterval(31 * 86_400))
 runner.check(history.samples.isEmpty, "history retention removes old samples")
 runner.check(UsageForecast.evenUsePercent(window: latest.windows[0], at: measuredAt.addingTimeInterval(1800)) == 50, "even-use guide uses window duration")
 
+do {
+    let dynamic = try ClaudeUsageDecoder.decode(Data(#"{"seven_day_fable":{"utilization":21,"resets_at":"2035-01-01T00:00:00Z"}}"#.utf8), planHint: nil, now: measuredAt)
+    runner.check(dynamic.windows.count == 1 && dynamic.windows[0].usedPercent == 21, "accept additional provider quota windows")
+} catch { runner.check(false, "accept additional provider quota windows") }
+
+runner.checkThrows("reject oversized subprocess input before launch") {
+    _ = try ProcessRunner.run(executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "exit 0"],
+                              standardInput: Data(repeating: 0, count: 8192), timeout: 1)
+}
+let noReset = UsageWindow(id: "session", name: "Session", usedPercent: 40, resetsAt: nil, durationMinutes: 60)
+runner.check(history.series(for: latest, window: noReset).isEmpty, "unknown reset does not join history cycles")
+
 print("\nQuotaBar checks: \(runner.passed) passed, \(runner.failed) failed")
 if runner.failed > 0 { exit(1) }
 

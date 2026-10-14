@@ -2,8 +2,11 @@ import Foundation
 import QuotaBarCore
 
 actor HistoryPersistence {
-    private let url: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("QuotaBar/history.json")
+    private let url: URL
+    init(url: URL? = nil) {
+        self.url = url ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("QuotaBar/history.json")
+    }
 
     func load() throws -> UsageHistory {
         guard FileManager.default.fileExists(atPath: url.path) else { return UsageHistory() }

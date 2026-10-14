@@ -6,8 +6,9 @@ protocol HTTPClient: Sendable {
 }
 
 final class URLSessionHTTPClient: HTTPClient, @unchecked Sendable {
+    private let session = URLSession(configuration: .ephemeral)
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let response = response as? HTTPURLResponse else {
             throw ProviderError.invalidResponse("Claude")
         }
@@ -61,7 +62,7 @@ public struct ClaudeUsageProvider: UsageProvider {
         request.httpMethod = "GET"
         request.setValue("Bearer \(credential.accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
-        request.setValue("QuotaBar/1.0.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("QuotaBar/1.1.0", forHTTPHeaderField: "User-Agent")
 
         let (data, response): (Data, HTTPURLResponse)
         do {
@@ -100,11 +101,12 @@ public enum ClaudeCredentialLoader {
 
     private static func loadFromKeychain() throws -> ClaudeCredential {
         let security = URL(fileURLWithPath: "/usr/bin/security")
-        let result = try ProcessRunner.run(
+        let result: ProcessResult
+        do { result = try ProcessRunner.run(
             executable: security,
             arguments: ["find-generic-password", "-s", "Claude Code-credentials", "-w"],
             timeout: 8
-        )
+        ) } catch ProcessRunnerError.timedOut { throw ProviderError.timedOut("Claude Keychain") }
         guard result.exitCode == 0 else {
             if result.exitCode == 44 { throw ProviderError.notSignedIn("claude auth login") }
             throw ProviderError.accessDenied("Claude Keychain")
@@ -155,7 +157,8 @@ public enum ClaudeUsageDecoder {
         let plan = responsePlan.map(prettyPlan) ?? planHint
         var windows: [UsageWindow] = []
 
-        for key in preferredKeys {
+        let additionalKeys = root.keys.filter { !preferredKeys.contains($0) && ($0.hasPrefix("seven_day_") || $0.hasPrefix("five_hour_")) }.sorted()
+        for key in preferredKeys + additionalKeys {
             guard let item = root[key] as? [String: Any], let window = decodeWindow(item, key: key) else { continue }
             windows.append(window)
         }
@@ -221,7 +224,7 @@ public enum ClaudeUsageDecoder {
     }
 
     private static func parseDate(_ value: Any?) -> Date? {
-        if let number = value as? NSNumber { return Date(timeIntervalSince1970: number.doubleValue) }
+        if let number = value as? NSNumber { return number.doubleValue.isFinite ? Date(timeIntervalSince1970: number.doubleValue) : nil }
         guard let string = value as? String else { return nil }
         let withFraction = ISO8601DateFormatter()
         withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

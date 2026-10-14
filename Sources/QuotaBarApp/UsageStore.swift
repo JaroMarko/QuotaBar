@@ -14,7 +14,8 @@ final class UsageStore: ObservableObject {
 
     @Published private(set) var history = UsageHistory()
     @Published private(set) var historyError: String?
-    private let historyPersistence = HistoryPersistence()
+    private let historyPersistence: HistoryPersistence
+    private let defaults: UserDefaults
     private var historyWritable = true
 
     let preferences: AppPreferences
@@ -31,14 +32,17 @@ final class UsageStore: ObservableObject {
     private var ledger: AlertLedger
 
     init(providers: [any UsageProvider] = [ClaudeUsageProvider(), CodexUsageProvider()],
-         preferences: AppPreferences? = nil) {
+         preferences: AppPreferences? = nil, defaults: UserDefaults = .standard,
+         historyPersistence: HistoryPersistence = HistoryPersistence()) {
         self.providers = providers
-        self.preferences = preferences ?? AppPreferences()
-        if let data = UserDefaults.standard.data(forKey: "alertLedger"),
+        self.defaults = defaults
+        self.historyPersistence = historyPersistence
+        self.preferences = preferences ?? AppPreferences(defaults: defaults)
+        if let data = defaults.data(forKey: "alertLedger"),
            let saved = try? JSONDecoder().decode(AlertLedger.self, from: data) { ledger = saved }
         else { ledger = AlertLedger() }
         states = Dictionary(uniqueKeysWithValues: ProviderKind.allCases.map { kind in
-            let cached = Self.loadCachedSnapshot(for: kind)
+            let cached = Self.loadCachedSnapshot(for: kind, defaults: defaults)
             return (kind, ProviderDisplayState(provider: kind, snapshot: cached,
                 errorMessage: nil, isRefreshing: false, isStale: cached != nil))
         })
@@ -67,6 +71,12 @@ final class UsageStore: ObservableObject {
                 guard let self else { return }
                 let recovered = !self.networkAvailable && path.status == .satisfied
                 self.networkAvailable = path.status == .satisfied
+                if !self.networkAvailable {
+                    for kind in ProviderKind.allCases {
+                        self.states[kind]?.isStale = self.states[kind]?.snapshot != nil
+                        self.states[kind]?.errorMessage = "Offline — waiting for the network"
+                    }
+                }
                 if recovered { await self.refreshAll(force: true) }
             }
         }
@@ -133,7 +143,7 @@ final class UsageStore: ObservableObject {
                         errorMessage: nil, isRefreshing: false, isStale: false)
                     failures[kind] = 0; rateLimitedUntil[kind] = nil
                     nextRefreshAt[kind] = Date().addingTimeInterval(RefreshPolicy.interval(previous: previous, current: snapshot, now: Date()))
-                    Self.cache(snapshot)
+                    Self.cache(snapshot, defaults: defaults)
                     history.append(snapshot)
                     if historyWritable {
                         do { try await historyPersistence.save(history); historyError = nil }
@@ -141,7 +151,7 @@ final class UsageStore: ObservableObject {
                     }
                     let alerts = ledger.take(previous: previous, current: snapshot,
                         thresholds: preferences.enabledThresholds, resetEnabled: preferences.notificationReset)
-                    if let data = try? JSONEncoder().encode(ledger) { UserDefaults.standard.set(data, forKey: "alertLedger") }
+                    if let data = try? JSONEncoder().encode(ledger) { defaults.set(data, forKey: "alertLedger") }
                     for alert in alerts { await notificationService.send(alert) }
                 case let .failure(error):
                     failures[kind, default: 0] += 1
@@ -164,13 +174,13 @@ final class UsageStore: ObservableObject {
         } catch { historyError = "Local history could not be cleared." }
     }
 
-    private static func cache(_ snapshot: UsageSnapshot) {
+    private static func cache(_ snapshot: UsageSnapshot, defaults: UserDefaults) {
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
-        UserDefaults.standard.set(data, forKey: "cachedSnapshot.\(snapshot.provider.rawValue)")
+        defaults.set(data, forKey: "cachedSnapshot.\(snapshot.provider.rawValue)")
     }
 
-    private static func loadCachedSnapshot(for provider: ProviderKind) -> UsageSnapshot? {
-        guard let data = UserDefaults.standard.data(forKey: "cachedSnapshot.\(provider.rawValue)") else { return nil }
+    private static func loadCachedSnapshot(for provider: ProviderKind, defaults: UserDefaults) -> UsageSnapshot? {
+        guard let data = defaults.data(forKey: "cachedSnapshot.\(provider.rawValue)") else { return nil }
         return try? JSONDecoder().decode(UsageSnapshot.self, from: data)
     }
 }

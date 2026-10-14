@@ -21,3 +21,10 @@ Observed quota changes, >=90% usage and upcoming resets select 60s refresh; quie
 
 ## Phase 4
 History persists only percentages, window/account scope and measurement/reset times in Application Support/QuotaBar/history.json (atomic save, 0700 directory/0600 file). Retention is 30 days/10,000 samples. Malformed existing files are retained rather than overwritten. Charts show the current account/reset cycle and at most 96 recent points. Forecast requires 3 monotonic recent samples spanning >=10 minutes, a fresh last sample and known reset/account scope; it remains explicitly an estimate. Headroom is shown per provider without automated switching.
+
+## Phase 5 startup investigation
+The application smoke process hung in SwiftUI MenuBarExtraController.updateButton / NSStatusBarButton.setImage during finish-launching (sampled main thread). Native NSStatusItem replaces that bridge, while NSPopover/NSWindow host the existing SwiftUI content. This is a concrete GUI failure beyond successful provider CLI probes. Developer ID query returned 0 valid signing identities; no public notarization can be claimed.
+
+Native startup smoke succeeded with both live providers and local history. Additional unknown opaque top-level fields are not inferred as quota windows; known five-hour/seven-day families and model-scoped limits are decoded. Icon preview rendered from the actual AppKit code. Release version is 1.1.0.
+
+Final review: bounded subprocess input, cleanup on input errors and history suppression for unknown reset cycles added. 47 checks and store integration passed. Expanded package signature/hash passed. GUI screenshot tooling returned a blank Finder surface; no interactive GUI validation claim is made. Public signing/notarization needs an existing Developer ID certificate.
