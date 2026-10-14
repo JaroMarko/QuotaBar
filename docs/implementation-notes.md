@@ -68,3 +68,6 @@ User rejected curved provider names as unreadable and miscentred. Restore plain 
 
 ## Provider colours (1.3.5)
 User approved trying provider colours in both combined modes. Claude uses terracotta #D97757 (outer concentric ring / left semicircle); Codex uses indigo #6366F1 (inner / right). These indicate provider identity at every usage level. Unused tracks remain neutral and unavailable quotas dotted. Combined images render in colour with an appearance-adaptive Q/track, refreshed when the application appearance changes (button appearance is read when rendering; observing it caused snapshot redraw feedback and was removed). Provider-only/icon-only modes and both-inactive fallback retain system template rendering. Provider card accents and mode explanation/tooltip match the rings. Canvas24pt/status item28pt remain unchanged. Native light/dark previews, menu appearance/fallback checks and the existing regression suite passed.
+
+## Codex contrast correction (1.3.6)
+User rejected indigo because it was unreadable on the dark menu bar. Both combined modes now use cyan: #67E8F9 in dark appearance and #0891B2 in light appearance. This preserves contrast on both backgrounds; provider card accent follows the same appearance-aware palette. Claude terracotta, layout and quota behaviour are unchanged.

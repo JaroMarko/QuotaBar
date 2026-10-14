@@ -24,7 +24,7 @@ enum MenuBarIcon {
                       span: CGFloat = 360, clockwise: Bool = true) {
                 guard states.first(where: { $0.provider == provider })?.isInactive != true else { return }
                 drawRing(value: values[provider] ?? nil, radius: radius, start: start, span: span, clockwise: clockwise,
-                         colour: coloured ? providerColour(provider) : ink, ink: ink)
+                         colour: coloured ? providerColour(provider, dark: dark) : ink, ink: ink)
             }
             switch renderedMode {
             case .concentric:
@@ -58,10 +58,12 @@ enum MenuBarIcon {
         return image
     }
 
-    nonisolated static func providerColour(_ provider: ProviderKind) -> NSColor {
+    nonisolated static func providerColour(_ provider: ProviderKind, dark: Bool = false) -> NSColor {
         provider == .claude
             ? NSColor(srgbRed: 217.0 / 255, green: 119.0 / 255, blue: 87.0 / 255, alpha: 1)
-            : NSColor(srgbRed: 99.0 / 255, green: 102.0 / 255, blue: 241.0 / 255, alpha: 1)
+            : (dark
+                ? NSColor(srgbRed: 103.0 / 255, green: 232.0 / 255, blue: 249.0 / 255, alpha: 1)
+                : NSColor(srgbRed: 8.0 / 255, green: 145.0 / 255, blue: 178.0 / 255, alpha: 1))
     }
 
     nonisolated private static func drawRing(value: Double?, radius: CGFloat, start: CGFloat, span: CGFloat, clockwise: Bool, colour: NSColor, ink: NSColor) {
