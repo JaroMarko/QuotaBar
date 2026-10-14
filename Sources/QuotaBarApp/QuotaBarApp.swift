@@ -35,7 +35,7 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
         }
         UNUserNotificationCenter.current().delegate = self
         let store = UsageStore.shared
-        statusItem = NSStatusBar.system.statusItem(withLength: MenuBarIcon.size(for: store.preferences.menuBarMode).width + 4)
+        statusItem = NSStatusBar.system.statusItem(withLength: MenuBarIcon.size.width + 4)
         statusItem?.button?.target = self
         statusItem?.button?.action = #selector(handleStatusClick)
         statusItem?.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -69,9 +69,7 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
 
     private func updateIcon() {
         let states = UsageStore.shared.orderedStates
-        let image = MenuBarIcon.image(states: states, mode: UsageStore.shared.preferences.menuBarMode)
-        statusItem?.length = image.size.width + 4
-        statusItem?.button?.image = image
+        statusItem?.button?.image = MenuBarIcon.image(states: states, mode: UsageStore.shared.preferences.menuBarMode)
         statusItem?.button?.toolTip = states.map { state in
             if state.isInactive { return "\(state.provider.displayName): Vypnutá" }
             let detail = state.meterValue().map { "\(state.snapshot?.meterWindow?.name ?? "Quota"): \(UsageFormatting.percent($0)) used" } ?? "current usage unavailable"

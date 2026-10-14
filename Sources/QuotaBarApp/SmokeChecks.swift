@@ -87,7 +87,7 @@ enum SmokeChecks {
         for mode in MenuBarMode.allCases {
             preferences.menuBarMode = mode
             guard AppPreferences(defaults: defaults).menuBarMode == mode,
-                  MenuBarIcon.image(states: [], mode: mode).size == MenuBarIcon.size(for: mode),
+                  MenuBarIcon.image(states: [], mode: mode).size == NSSize(width: 24, height: 24),
                   MenuBarIcon.image(states: [], mode: mode).isTemplate else { return false }
         }
         defaults.set("invalid-future-mode", forKey: "menuBarMode")
@@ -125,7 +125,7 @@ enum SmokeChecks {
         controller.view.layoutSubtreeIfNeeded()
         let size = controller.view.fittingSize
         guard size.width == 410, size.height > 150, size.height < 350 else { return false }
-        print("PASS menu: hosted size \(size), centred anchor, left/right/control click routing, Quit target, test notification payload, five persisted compact modes")
+        print("PASS menu: hosted size \(size), centred anchor, left/right/control click routing, Quit target, test notification payload, five persisted 24pt modes")
         return true
     }
 
@@ -350,8 +350,8 @@ enum SmokeChecks {
                 for (column, mode) in modes.enumerated() {
                     let icon = MenuBarIcon.image(states: states, mode: mode, now: now)
                     let x = CGFloat(130 + column * 116)
-                    icon.draw(in: NSRect(x: x, y: y + 12, width: icon.size.width, height: 24))
-                    icon.draw(in: NSRect(x: x + 32, y: y, width: icon.size.width * 2, height: 48))
+                    icon.draw(in: NSRect(x: x, y: y + 12, width: 24, height: 24))
+                    icon.draw(in: NSRect(x: x + 32, y: y, width: 48, height: 48))
                 }
             }
             return true
