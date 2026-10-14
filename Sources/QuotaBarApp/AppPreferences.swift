@@ -11,7 +11,7 @@ enum MenuBarMode: String, CaseIterable, Identifiable {
         case .claude: "Claude only"
         case .codex: "Codex only"
         case .iconOnly: "QuotaBar icon only"
-        case .semicircles: "Both — semicircles"
+        case .semicircles: "Both — labelled semicircles"
         }
     }
     var providers: [ProviderKind] {
