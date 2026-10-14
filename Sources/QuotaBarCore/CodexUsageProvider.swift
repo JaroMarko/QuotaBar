@@ -11,7 +11,7 @@ public struct CodexUsageProvider: UsageProvider {
         timeout = 10
     }
 
-    init(executable: URL?, timeout: TimeInterval = 10) {
+    public init(executable: URL?, timeout: TimeInterval = 10) {
         self.executable = executable
         self.timeout = timeout
     }
@@ -25,6 +25,10 @@ public struct CodexUsageProvider: UsageProvider {
                 return try CodexRPCSession.fetch(executable: executable, timeout: timeout)
             } catch CodexRPCError.timedOut {
                 throw ProviderError.timedOut("Codex")
+            } catch CodexRPCError.closed {
+                throw ProviderError.unavailable("Codex CLI stopped before returning limits. Check its version and login.")
+            } catch CodexRPCError.invalidResponse {
+                throw ProviderError.invalidResponse("Codex")
             }
         }.value
     }
@@ -44,15 +48,17 @@ private enum CodexRPCSession {
         let inputPipe = Pipe()
 
         process.executableURL = executable
-        process.arguments = ["-s", "read-only", "-a", "never", "app-server", "--stdio"]
+        process.arguments = ["-s", "read-only", "-a", "never", "-c", "analytics.enabled=false", "app-server", "--stdio"]
         process.standardOutput = outputPipe
         process.standardError = errorPipe
         process.standardInput = inputPipe
 
         try process.run()
+        let errors = PipeCapture(errorPipe.fileHandleForReading)
         defer {
             try? inputPipe.fileHandleForWriting.close()
-            if process.isRunning { process.terminate() }
+            ProcessRunner.terminate(process)
+            _ = errors.finish()
         }
 
         let reader = JSONLineReader(handle: outputPipe.fileHandleForReading)
@@ -64,7 +70,9 @@ private enum CodexRPCSession {
                 "capabilities": ["experimentalApi": false]
             ]
         ], to: inputPipe.fileHandleForWriting)
-        _ = try reader.readResponse(id: 1, timeout: timeout)
+        let initialized = try reader.readResponse(id: 1, timeout: timeout)
+        guard initialized["error"] == nil else { throw CodexRPCError.invalidResponse }
+        try send(["method": "initialized"], to: inputPipe.fileHandleForWriting)
 
         try send(
             ["id": 2, "method": "account/read", "params": ["refreshToken": false]],
@@ -89,6 +97,7 @@ private enum CodexRPCSession {
         guard let rateResult = rateResponse["result"] as? [String: Any] else {
             throw CodexRPCError.invalidResponse
         }
+        guard accountResponse["error"] == nil else { throw ProviderError.notSignedIn("codex login") }
         let accountResult = accountResponse["result"] as? [String: Any]
         return try CodexUsageDecoder.decode(rateLimitResult: rateResult, accountResult: accountResult, now: Date())
     }
@@ -128,6 +137,7 @@ private final class JSONLineReader {
             if count < 0 && errno == EINTR { continue }
             if count <= 0 { throw CodexRPCError.closed }
             buffer.append(contentsOf: bytes.prefix(count))
+            if buffer.count > 1_048_576 { throw CodexRPCError.invalidResponse }
         }
         throw CodexRPCError.timedOut
     }
@@ -186,7 +196,9 @@ public enum CodexUsageDecoder {
         }
 
         guard !decodedWindows.isEmpty else { throw ProviderError.invalidResponse("Codex") }
-        return UsageSnapshot(provider: .codex, plan: plan, windows: decodedWindows, fetchedAt: now)
+        let account = accountResult?["account"] as? [String: Any]
+        return UsageSnapshot(provider: .codex, plan: plan, windows: decodedWindows, fetchedAt: now,
+                             source: "Codex CLI RPC", account: account?["email"] as? String)
     }
 
     private static func windows(
@@ -211,7 +223,7 @@ public enum CodexUsageDecoder {
         id: String,
         fallbackTitle: String?
     ) -> UsageWindow? {
-        guard let used = (dictionary["usedPercent"] as? NSNumber)?.doubleValue else { return nil }
+        guard let used = (dictionary["usedPercent"] as? NSNumber)?.doubleValue, used.isFinite else { return nil }
         let minutes = (dictionary["windowDurationMins"] as? NSNumber)?.intValue
         let resetSeconds = (dictionary["resetsAt"] as? NSNumber)?.doubleValue
         let baseName = windowName(minutes: minutes)

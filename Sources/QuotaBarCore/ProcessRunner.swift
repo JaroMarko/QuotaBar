@@ -1,67 +1,108 @@
 import Darwin
 import Foundation
 
-struct ProcessResult: Sendable {
-    let stdout: Data
-    let stderr: Data
-    let exitCode: Int32
+public struct ProcessResult: Sendable {
+    public let stdout: Data
+    public let stderr: Data
+    public let exitCode: Int32
 }
 
-enum ProcessRunnerError: Error {
-    case timedOut
-}
+public enum ProcessRunnerError: Error { case timedOut }
 
-enum ProcessRunner {
-    static func run(
-        executable: URL,
-        arguments: [String],
-        standardInput: Data? = nil,
-        timeout: TimeInterval
-    ) throws -> ProcessResult {
-        let process = Process()
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        let inputPipe = Pipe()
-        let completion = DispatchSemaphore(value: 0)
+// Drain both pipes while the child runs: waiting before reading can deadlock
+// on a full pipe. Retain at most 1 MiB; still drain additional bytes.
+final class PipeCapture: @unchecked Sendable {
+    private let handle: FileHandle
+    private let lock = NSLock()
+    private var bytes = Data()
+    private var cancelled = false
+    private var didFinish = false
+    private let finished = DispatchSemaphore(value: 0)
 
-        process.executableURL = executable
-        process.arguments = arguments
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-        process.standardInput = inputPipe
-        process.terminationHandler = { _ in completion.signal() }
+    init(_ handle: FileHandle) {
+        self.handle = handle
+        DispatchQueue.global(qos: .utility).async { self.readLoop() }
+    }
 
-        try process.run()
-        if let standardInput {
-            inputPipe.fileHandleForWriting.write(standardInput)
+    private func readLoop() {
+        defer { finished.signal() }
+        var buffer = [UInt8](repeating: 0, count: 16_384)
+        while true {
+            lock.lock(); let stop = cancelled; lock.unlock()
+            if stop { return }
+            var fd = pollfd(fd: handle.fileDescriptor, events: Int16(POLLIN), revents: 0)
+            let ready = Darwin.poll(&fd, 1, 50)
+            if ready == 0 { continue }
+            if ready < 0 { if errno == EINTR { continue }; return }
+            let count = Darwin.read(handle.fileDescriptor, &buffer, buffer.count)
+            if count <= 0 { if count < 0 && errno == EINTR { continue }; return }
+            lock.lock()
+            let retained = min(count, max(0, 1_048_576 - bytes.count))
+            bytes.append(contentsOf: buffer.prefix(retained))
+            lock.unlock()
         }
-        try? inputPipe.fileHandleForWriting.close()
+    }
 
-        if completion.wait(timeout: .now() + timeout) == .timedOut {
-            process.terminate()
-            if completion.wait(timeout: .now() + 0.5) == .timedOut {
-                kill(process.processIdentifier, SIGKILL)
-            }
-            throw ProcessRunnerError.timedOut
+    func finish() -> Data {
+        lock.lock()
+        if didFinish { let result = bytes; lock.unlock(); return result }
+        didFinish = true
+        lock.unlock()
+        if finished.wait(timeout: .now() + 0.5) == .timedOut {
+            lock.lock(); cancelled = true; lock.unlock()
+            _ = finished.wait(timeout: .now() + 0.2)
         }
-
-        return ProcessResult(
-            stdout: outputPipe.fileHandleForReading.readDataToEndOfFile(),
-            stderr: errorPipe.fileHandleForReading.readDataToEndOfFile(),
-            exitCode: process.terminationStatus
-        )
+        lock.lock(); defer { lock.unlock() }
+        return bytes
     }
 }
 
-enum ExecutableLocator {
-    static func find(_ name: String) -> URL? {
-        let fileManager = FileManager.default
-        let candidates = [
-            "/opt/homebrew/bin/\(name)",
-            "/usr/local/bin/\(name)",
-            "/usr/bin/\(name)"
-        ]
+public enum ProcessRunner {
+    public static func run(executable: URL, arguments: [String], standardInput: Data? = nil,
+                           timeout: TimeInterval) throws -> ProcessResult {
+        let process = Process()
+        let output = Pipe(), error = Pipe(), input = Pipe()
+        let completion = DispatchSemaphore(value: 0)
+        process.executableURL = executable
+        process.arguments = arguments
+        process.standardOutput = output; process.standardError = error; process.standardInput = input
+        process.terminationHandler = { _ in completion.signal() }
+        try process.run()
+        let outCapture = PipeCapture(output.fileHandleForReading)
+        let errCapture = PipeCapture(error.fileHandleForReading)
+        defer {
+            try? input.fileHandleForWriting.close()
+            _ = outCapture.finish(); _ = errCapture.finish()
+        }
+        // Inputs in this app are small RPC/credential probes, never user content.
+        if let standardInput { try input.fileHandleForWriting.write(contentsOf: standardInput) }
+        try? input.fileHandleForWriting.close()
+        if completion.wait(timeout: .now() + timeout) == .timedOut {
+            terminate(process)
+            throw ProcessRunnerError.timedOut
+        }
+        return ProcessResult(stdout: outCapture.finish(), stderr: errCapture.finish(),
+                             exitCode: process.terminationStatus)
+    }
 
-        return candidates.first(where: fileManager.isExecutableFile(atPath:)).map(URL.init(fileURLWithPath:))
+    static func terminate(_ process: Process) {
+        guard process.isRunning else { return }
+        process.terminate()
+        let deadline = Date().addingTimeInterval(0.3)
+        while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
+        if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+    }
+}
+
+public enum ExecutableLocator {
+    public static func find(_ name: String) -> URL? {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
+        let directories = ["/opt/homebrew/bin", "\(home)/.local/bin", "/usr/local/bin", "/usr/bin"]
+            + path.split(separator: ":").map(String.init)
+        var candidates = directories.map { "\($0)/\(name)" }
+        if name == "codex" { candidates.append("/Applications/Codex.app/Contents/Resources/codex") }
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+            .map { URL(fileURLWithPath: $0) }
     }
 }

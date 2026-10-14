@@ -17,10 +17,12 @@ final class URLSessionHTTPClient: HTTPClient, @unchecked Sendable {
 public struct ClaudeCredential: Sendable {
     public let accessToken: String
     public let planHint: String?
+    public let expiresAt: Date?
 
-    public init(accessToken: String, planHint: String?) {
+    public init(accessToken: String, planHint: String?, expiresAt: Date? = nil) {
         self.accessToken = accessToken
         self.planHint = planHint
+        self.expiresAt = expiresAt
     }
 }
 
@@ -43,7 +45,10 @@ public struct ClaudeUsageProvider: UsageProvider {
     }
 
     public func fetch() async throws -> UsageSnapshot {
-        let credential = try credentialLoader()
+        let credential = try await Task.detached(priority: .utility) { try credentialLoader() }.value
+        if let expires = credential.expiresAt, expires <= Date() {
+            throw ProviderError.expiredCredentials("Claude")
+        }
         guard let url = URL(string: "https://api.anthropic.com/api/oauth/usage") else {
             throw ProviderError.invalidResponse("Claude")
         }
@@ -59,15 +64,22 @@ public struct ClaudeUsageProvider: UsageProvider {
             (data, response) = try await client.data(for: request)
         } catch let error as ProviderError {
             throw error
+        } catch let error as URLError {
+            if error.code == .timedOut { throw ProviderError.timedOut("Claude") }
+            throw ProviderError.networkUnavailable("Claude")
         } catch {
             throw ProviderError.unavailable("Claude usage is currently unavailable.")
         }
 
         switch response.statusCode {
         case 200:
-            return try ClaudeUsageDecoder.decode(data, planHint: credential.planHint, now: Date())
-        case 401, 403:
+            let decoded = try ClaudeUsageDecoder.decode(data, planHint: credential.planHint, now: Date())
+            return UsageSnapshot(provider: .claude, plan: decoded.plan, windows: decoded.windows,
+                                 fetchedAt: decoded.fetchedAt, source: "Claude OAuth usage", account: nil)
+        case 401:
             throw ProviderError.notSignedIn("claude auth login")
+        case 403:
+            throw ProviderError.accessDenied("Claude")
         case 429:
             throw ProviderError.rateLimited("Claude")
         default:
@@ -78,9 +90,8 @@ public struct ClaudeUsageProvider: UsageProvider {
 
 public enum ClaudeCredentialLoader {
     static func load() throws -> ClaudeCredential {
-        if let credential = try? loadFromKeychain() { return credential }
-        if let credential = try? loadFromFile() { return credential }
-        throw ProviderError.notSignedIn("claude auth login")
+        if let credential = try? loadFromFile(), credential.expiresAt.map({ $0 > Date() }) ?? true { return credential }
+        return try loadFromKeychain()
     }
 
     private static func loadFromKeychain() throws -> ClaudeCredential {
@@ -90,7 +101,10 @@ public enum ClaudeCredentialLoader {
             arguments: ["find-generic-password", "-s", "Claude Code-credentials", "-w"],
             timeout: 8
         )
-        guard result.exitCode == 0 else { throw ProviderError.notSignedIn("claude auth login") }
+        guard result.exitCode == 0 else {
+            if result.exitCode == 44 { throw ProviderError.notSignedIn("claude auth login") }
+            throw ProviderError.accessDenied("Claude Keychain")
+        }
         return try decodeCredential(result.stdout)
     }
 
@@ -114,7 +128,9 @@ public enum ClaudeCredentialLoader {
             ?? (oauth["subscription_type"] as? String)
             ?? (oauth["rateLimitTier"] as? String)
             ?? (oauth["rate_limit_tier"] as? String)
-        return ClaudeCredential(accessToken: token, planHint: plan.map(ClaudeUsageDecoder.prettyPlan))
+        let expiry = (oauth["expiresAt"] as? NSNumber)?.doubleValue
+        return ClaudeCredential(accessToken: token, planHint: plan.map(ClaudeUsageDecoder.prettyPlan),
+                                expiresAt: expiry.map { Date(timeIntervalSince1970: $0 / 1000) })
     }
 }
 
@@ -195,8 +211,8 @@ public enum ClaudeUsageDecoder {
     }
 
     private static func number(_ value: Any?) -> Double? {
-        if let number = value as? NSNumber { return number.doubleValue }
-        if let string = value as? String { return Double(string) }
+        if let number = value as? NSNumber { return number.doubleValue.isFinite ? number.doubleValue : nil }
+        if let string = value as? String, let number = Double(string), number.isFinite { return number }
         return nil
     }
 

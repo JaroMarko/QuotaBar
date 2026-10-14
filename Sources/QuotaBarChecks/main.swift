@@ -147,6 +147,36 @@ runner.check(
     "first refresh notification suppression"
 )
 
+// Regression: a noisy child must not block on a full stdout/stderr pipe.
+do {
+    let result = try ProcessRunner.run(executable: URL(fileURLWithPath: "/bin/sh"),
+        arguments: ["-c", "dd if=/dev/zero bs=65536 count=4 2>/dev/null; dd if=/dev/zero bs=65536 count=4 1>&2 2>/dev/null"], timeout: 3)
+    runner.check(result.stdout.count == 262_144 && result.stderr.count == 262_144, "drain full stdout and stderr pipes")
+} catch { runner.check(false, "drain full stdout and stderr pipes") }
+let timeoutStart = Date()
+runner.checkThrows("kill child ignoring SIGTERM") {
+    _ = try ProcessRunner.run(executable: URL(fileURLWithPath: "/bin/sh"),
+        arguments: ["-c", "trap '' TERM; while :; do :; done"], timeout: 0.15)
+}
+runner.check(Date().timeIntervalSince(timeoutStart) < 3, "subprocess timeout remains bounded")
+let measuredAt = Date(timeIntervalSince1970: 2_000_000_000)
+let measured = UsageSnapshot(provider: .codex, plan: nil, windows: [
+    UsageWindow(id: "session", name: "Session", usedPercent: 31, resetsAt: measuredAt.addingTimeInterval(300), durationMinutes: 300)
+], fetchedAt: measuredAt, source: "fixture", account: "fixture")
+let fresh = ProviderDisplayState(provider: .codex, snapshot: measured, errorMessage: nil, isRefreshing: false, isStale: false)
+runner.check(fresh.meterValue(at: measuredAt) == 31, "fresh meter uses reported quota")
+runner.check(fresh.meterValue(at: measuredAt.addingTimeInterval(301)) == nil, "elapsed reset does not invent fresh quota")
+let stale = ProviderDisplayState(provider: .codex, snapshot: measured, errorMessage: "Offline", isRefreshing: false, isStale: true)
+runner.check(stale.meterValue(at: measuredAt) == nil && stale.snapshot?.fetchedAt == measuredAt, "stale data keeps original timestamp")
+let unknown = ProviderDisplayState(provider: .claude, snapshot: nil, errorMessage: nil, isRefreshing: false, isStale: false)
+runner.check(unknown.meterValue(at: measuredAt) == nil, "unknown quota is not zero")
+runner.checkThrows("reject nonfinite Claude utilization") {
+    _ = try ClaudeUsageDecoder.decode(Data(#"{"five_hour":{"utilization":"nan"}}"#.utf8), planHint: nil, now: measuredAt)
+}
+if let encoded = try? JSONEncoder().encode(measured), let decoded = try? JSONDecoder().decode(UsageSnapshot.self, from: encoded) {
+    runner.check(decoded.source == "fixture" && decoded.account == "fixture", "snapshot source/account round trip")
+} else { runner.check(false, "snapshot source/account round trip") }
+
 print("\nQuotaBar checks: \(runner.passed) passed, \(runner.failed) failed")
 if runner.failed > 0 { exit(1) }
 

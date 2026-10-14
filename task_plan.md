@@ -4,8 +4,8 @@
 Deliver a functioning local macOS Claude/Codex quota monitor with graphical menu-bar icons, diagnostics, adaptive refresh, trustworthy notifications and local history/pace. Commit each reviewed stage locally.
 
 ## Phases
-- [ ] 0. Preserve baseline and analyse current code/live failures.
-- [ ] 1. Repair acquisition, bounded subprocesses, schema validation and diagnostics; confirm live sources.
+- [x] 0. Preserve baseline and analyse current code/live failures.
+- [x] 1. Repair acquisition, bounded subprocesses, schema validation and diagnostics; confirm live sources.
 - [ ] 2. Add graphical provider icons without text, quota details and freshness/account/source display.
 - [ ] 3. Adaptive refresh, wake/offline recovery, notification deduplication and confirmed resets.
 - [ ] 4. Bounded local history, charts and conservative pace/forecast; alternative provider overview.
@@ -20,7 +20,18 @@ No new backend, telemetry, provider purchases, account switching, mobile sync or
 - Initial analysis will refine each stage before implementation.
 
 ## Errors
-None recorded yet.
+- UI automation getApp timed out; retry GUI inspection after rebuilding.
+- Initial write attempted without filesystem escalation and was denied before mutation; rerun under authorised escalation succeeded.
 
 ## Status
-Phase 0: analysing baseline.
+Phase 2: graphical menu bar and diagnostic details.
+
+## Acceptance criteria
+1. Both live provider checks return nonempty validated quota windows; noisy child and stuck child probes terminate within bounds.
+2. Menu bar contains only two graphical meters. Dotted meters represent unavailable/stale data, never zero. Detail cards show timestamps, source and exact reset.
+3. Refresh interval responds to observed activity, risk and resets, with bounded retries and network/wake triggers. Repeated crossings in the same account/window emit at most one alert per threshold.
+4. Local history is bounded by age/count, account and window. Charts never join different reset cycles; forecasts require multiple recent monotonic samples.
+5. Build, regression suite, live checks, package payload and GUI inspection pass or any external limitation is stated explicitly. Public notarization only if an existing identity is available.
+
+## Validation so far
+- Phase 1: release build/codesign passed; 27 checks passed; live Claude (2 windows) and Codex (1 window) succeeded.
