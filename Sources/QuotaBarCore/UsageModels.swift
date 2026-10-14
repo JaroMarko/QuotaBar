@@ -180,8 +180,16 @@ public struct ProviderDisplayState: Identifiable, Sendable {
     }
 
     public func meterValue(at now: Date = Date()) -> Double? {
-        guard !isInactive, let snapshot, !hasStaleData(at: now) else { return nil }
-        return snapshot.meterWindow?.clampedUsedPercent
+        guard !isInactive, let snapshot, let window = snapshot.meterWindow else { return nil }
+        if provider == .claude && snapshot.source == ClaudeSessionUsageProvider.sourceName {
+            // Idle Code keeps the last observed usage visible until this specific window resets.
+            // A missing/invalid bridge or unverified activity must still hide the ring.
+            guard errorMessage == nil,
+                  window.resetsAt.map({ $0 > now }) ?? !hasStaleData(at: now) else { return nil }
+            return window.clampedUsedPercent
+        }
+        guard !hasStaleData(at: now) else { return nil }
+        return window.clampedUsedPercent
     }
 }
 

@@ -272,9 +272,17 @@ do {
                  "bridge cache discards credentials and conversation fields")
     let permissions = try FileManager.default.attributesOfItem(atPath: bridgeURL.path)[.posixPermissions] as? NSNumber
     runner.check(permissions?.intValue == 0o600, "bridge cache is owner-only")
-    runner.checkThrows("stale bridge is not restamped as fresh") {
-        _ = try ClaudeSessionUsageProvider.load(url: bridgeURL, now: measuredAt.addingTimeInterval(601))
-    }
+    let idleAt = measuredAt.addingTimeInterval(601)
+    let idleSnapshot = try ClaudeSessionUsageProvider.load(url: bridgeURL, now: idleAt)
+    let idleState = ProviderDisplayState(provider: .claude, snapshot: idleSnapshot, errorMessage: nil, isRefreshing: false, isStale: false)
+    runner.check(idleState.hasStaleData(at: idleAt) && idleState.meterValue(at: idleAt) == 24 && idleSnapshot.fetchedAt == measuredAt,
+                 "idle Claude retains last known ring without restamping freshness")
+    runner.check(idleState.meterValue(at: measuredAt.addingTimeInterval(1001)) == nil,
+                 "idle Claude ring disappears only after its own reset")
+    var stopped = idleState; stopped.isInactive = true
+    runner.check(stopped.meterValue(at: idleAt) == nil, "inactive Claude still hides last known ring")
+    var invalidBridge = idleState; invalidBridge.errorMessage = "Invalid local bridge"
+    runner.check(invalidBridge.meterValue(at: idleAt) == nil, "invalid bridge cannot reuse last known ring")
     runner.checkThrows("bridge rejects future measurement") {
         try ClaudeSessionUsageProvider.capture(data: bridgeData(captured: 2_000_000_006), url: bridgeURL, now: measuredAt)
     }
@@ -300,6 +308,9 @@ do {
     let resetUnknown = try ClaudeSessionUsageProvider.load(url: bridgeURL, now: measuredAt)
     runner.check(resetUnknown.meterWindow?.usedPercent == 37 && resetUnknown.meterWindow?.resetsAt == nil,
                  "optional bridge reset preserves known usage without inventing reset time")
+    runner.checkThrows("old unknown-reset window cannot remain visible indefinitely") {
+        _ = try ClaudeSessionUsageProvider.load(url: bridgeURL, now: measuredAt.addingTimeInterval(601))
+    }
     runner.checkThrows("invalid provided bridge reset is rejected") {
         try ClaudeSessionUsageProvider.capture(data: Data(#"{"version":1,"capturedAt":2000000000,"rateLimits":[{"kind":"five_hour","percentUsed":37,"resetsAt":-1}]}"#.utf8), url: bridgeURL, now: measuredAt)
     }

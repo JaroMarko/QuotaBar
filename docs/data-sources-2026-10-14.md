@@ -1,8 +1,8 @@
 # QuotaBar: zdroje kvót (overené2026-10-14)
 
-## Aktuálna implementácia1.4.0
+## Aktuálna implementácia1.4.1
 
-Claude: lokálny mod číta oficiálne `$.session.usage()` a zapisuje iba `rateLimits` (kind,percentUsed,resetsAt) a capturedAt. QuotaBar číta súbor každých20s; nepoužíva Claude OAuth/Keychain ani usageHTTP. Hook `session.measure` reaguje po turne a pri zmene planusage; `/quotabar-sync` je lokálny command bez LLM. Desktop embeddedCode2.1.295 aj CLI2.1.299 overené; obe plugin validation/test prešli. Chat/Cowork-only nie sú zdrojom. Cloud/SSH mod beží na vzdialenom stroji,kde miestny /Applications/QuotaBar.app nie je prítomný. Meranie po10min bez update je stale; resetané okno sa skryje,nie0%. Account identity API neposkytuje,preto Claudeautoalerts/forecast withheld; prvý údaj pri migrácii nevytvorí falošný reset.
+Claude: lokálny mod číta oficiálne `$.session.usage()` a zapisuje iba `rateLimits` (kind,percentUsed,resetsAt) a capturedAt. QuotaBar číta súbor každých20s; nepoužíva Claude OAuth/Keychain ani usageHTTP. Hook `session.measure` reaguje po turne a pri zmene planusage; `/quotabar-sync` je lokálny command bez LLM. Desktop embeddedCode2.1.295 aj CLI2.1.299 overené; obe plugin validation/test prešli. Chat/Cowork-only nie sú zdrojom. Cloud/SSH mod beží na vzdialenom stroji,kde miestny /Applications/QuotaBar.app nie je prítomný. Meranie po10min bez update je označené ako last-known;Claude ring zostáva do svojho známeho resetu. Resetané okno alebo staré okno bez resettime sa skryje,nie0%. Account identity API neposkytuje,preto Claudeautoalerts/forecast withheld; prvý údaj pri migrácii nevytvorí falošný reset.
 
 Primárne docs: [Mods overview](https://code.claude.com/docs/en/plugins/mods/overview), [session.usage a session.measure](https://code.claude.com/docs/en/plugins/mods/reference), [Create/validate a mod](https://code.claude.com/docs/en/plugins/mods/create).
 

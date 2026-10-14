@@ -88,7 +88,7 @@ public struct ClaudeSessionUsageProvider: UsageProvider {
             throw ProviderError.invalidResponse("Claude Code local usage")
         }
         let capturedAt = Date(timeIntervalSince1970: envelope.capturedAt)
-        guard now.timeIntervalSince(capturedAt) <= 600 else {
+        guard !allowEmpty || now.timeIntervalSince(capturedAt) <= 600 else {
             throw ProviderError.localBridgeUnavailable("Claude Code usage is outdated. Send a message in a local Code session to update it.")
         }
         var kinds = Set<String>()
@@ -101,7 +101,9 @@ public struct ClaudeSessionUsageProvider: UsageProvider {
                   limit.resetsAt.map({ $0.isFinite && $0 > 0 && $0 <= 253_402_300_799 }) ?? true else {
                 throw ProviderError.invalidResponse("Claude Code local usage")
             }
-            if let reset = limit.resetsAt, reset <= now.timeIntervalSince1970 { continue }
+            if let reset = limit.resetsAt {
+                if reset <= now.timeIntervalSince1970 { continue }
+            } else if now.timeIntervalSince(capturedAt) > 600 { continue }
             validLimits.append(limit)
             windows.append(UsageWindow(id: "claude-\(limit.kind)",
                 name: limit.kind == "five_hour" ? "5-hour session" : "Weekly",

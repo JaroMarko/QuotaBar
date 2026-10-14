@@ -130,7 +130,9 @@ struct ProviderCard: View {
                     Text("5-hour quota unavailable — ring unconfirmed").font(.caption2).foregroundStyle(.orange)
                 }
                 if state.hasStaleData() && state.errorMessage == nil {
-                    Label("Last known usage — current quota unconfirmed", systemImage: "clock.badge.exclamationmark")
+                    Label(snapshot.source == ClaudeSessionUsageProvider.sourceName
+                          ? "Last observed \(snapshot.fetchedAt.formatted(date: .omitted, time: .shortened)) — updates automatically in Code"
+                          : "Last known usage — current quota unconfirmed", systemImage: "clock.badge.exclamationmark")
                         .font(.caption2).foregroundStyle(.orange)
                 }
             }

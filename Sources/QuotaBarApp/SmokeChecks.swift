@@ -367,6 +367,15 @@ enum SmokeChecks {
         await store.refreshAll(force: true)
         guard renderPopup(store: store, path: path, appearance: .aqua),
               renderPopup(store: store, path: base + "-dark.png", appearance: .darkAqua) else { return false }
+        let idleSnapshots = snapshots.map { snapshot in
+            snapshot.provider == .claude ? UsageSnapshot(provider: .claude, plan: snapshot.plan, windows: snapshot.windows,
+                fetchedAt: now.addingTimeInterval(-1200), source: ClaudeSessionUsageProvider.sourceName) : snapshot
+        }
+        let idleStore = makeStore(idleSnapshots)
+        await idleStore.refreshAll(force: true)
+        guard idleStore.states[.claude]?.hasStaleData() == true,
+              idleStore.states[.claude]?.meterValue() == 24,
+              renderPopup(store: idleStore, path: base + "-idle.png", appearance: .aqua) else { return false }
         let extraSnapshots = snapshots.map { snapshot in
             UsageSnapshot(provider: snapshot.provider, plan: snapshot.plan, windows: snapshot.windows + (0..<8).map { index in
                 UsageWindow(id: "model-\(index)", name: "Additional model \(index)", usedPercent: Double(90 + index),

@@ -79,7 +79,10 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
         statusItem?.button?.toolTip = mode.explanation + "\n" + states.map { state in
             if state.isInactive { return "\(state.provider.displayName): Vypnutá" }
             let detail = state.meterValue().map { "\(state.snapshot?.meterWindow?.name ?? "Quota"): \(UsageFormatting.percent($0)) used" } ?? "current usage unavailable"
-            return "\(state.provider.displayName): \(detail)"
+            let observed = state.snapshot.map { snapshot in
+                state.hasStaleData() ? " · last observed " + DateFormatter.localizedString(from: snapshot.fetchedAt, dateStyle: .short, timeStyle: .short) : ""
+            } ?? ""
+            return "\(state.provider.displayName): \(detail)\(observed)"
         }.joined(separator: "\n")
         statusItem?.button?.setAccessibilityLabel("QuotaBar. " + UsageStore.shared.preferences.menuBarMode.explanation)
     }
