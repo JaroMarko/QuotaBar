@@ -399,3 +399,25 @@ if CommandLine.arguments.contains("--live-claude") {
     }
     if !result.get() { exit(1) }
 }
+
+// Isolated fixtures verify the hybrid source without real credentials or HTTP calls.
+let hybridDone = DispatchSemaphore(value: 0)
+final class HybridCheckResult: @unchecked Sendable {
+    private let lock = NSLock(); private var value = false
+    func set(_ result: Bool) { lock.lock(); defer { lock.unlock() }; value = result }
+    func get() -> Bool { lock.lock(); defer { lock.unlock() }; return value }
+}
+let hybridResult = HybridCheckResult()
+Task.detached { hybridResult.set(await verifyClaudeHybrid()); hybridDone.signal() }
+if hybridDone.wait(timeout: .now() + 20) == .timedOut || !hybridResult.get() { exit(1) }
+if CommandLine.arguments.contains("--live-hybrid-claude") {
+    let done = DispatchSemaphore(value: 0)
+    Task.detached {
+        do {
+            let snapshot = try await ClaudeHybridUsageProvider(defaults: UserDefaults(suiteName: "com.jaroslavmarko.planmeter")!).fetch()
+            print("Live hybrid Claude: source=\(snapshot.source ?? "unknown"), windows=\(snapshot.windows.count), notice=\(snapshot.notice ?? "none")")
+        } catch { print("Live hybrid Claude: \(error.localizedDescription)") }
+        done.signal()
+    }
+    if done.wait(timeout: .now() + 30) == .timedOut { print("Live hybrid Claude probe timed out"); exit(1) }
+}

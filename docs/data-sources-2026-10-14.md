@@ -1,8 +1,8 @@
 # QuotaBar: zdroje kvót (overené2026-10-14)
 
-## Aktuálna implementácia1.4.1
+## Aktuálna implementácia1.5.0
 
-Claude: lokálny mod číta oficiálne `$.session.usage()` a zapisuje iba `rateLimits` (kind,percentUsed,resetsAt) a capturedAt. QuotaBar číta súbor každých20s; nepoužíva Claude OAuth/Keychain ani usageHTTP. Hook `session.measure` reaguje po turne a pri zmene planusage; `/quotabar-sync` je lokálny command bez LLM. Desktop embeddedCode2.1.295 aj CLI2.1.299 overené; obe plugin validation/test prešli. Chat/Cowork-only nie sú zdrojom. Cloud/SSH mod beží na vzdialenom stroji,kde miestny /Applications/QuotaBar.app nie je prítomný. Meranie po10min bez update je označené ako last-known;Claude ring zostáva do svojho známeho resetu. Resetané okno alebo staré okno bez resettime sa skryje,nie0%. Account identity API neposkytuje,preto Claudeautoalerts/forecast withheld; prvý údaj pri migrácii nevytvorí falošný reset.
+Claude: lokálny mod číta oficiálne `$.session.usage()` a zapisuje iba `rateLimits` (kind,percentUsed,resetsAt) a capturedAt. QuotaBar číta súbor každých20s; lokálny zdroj nečíta OAuth;pri nedostupných/starších údajoch má autorizovaný experimentálny OAuth fallback. Hook `session.measure` reaguje po turne a pri zmene planusage; `/quotabar-sync` je lokálny command bez LLM. Desktop embeddedCode2.1.295 aj CLI2.1.299 overené; obe plugin validation/test prešli. Chat/Cowork-only nie sú zdrojom. Cloud/SSH mod beží na vzdialenom stroji,kde miestny /Applications/QuotaBar.app nie je prítomný. Meranie po10min bez update je označené ako last-known;Claude ring zostáva do svojho známeho resetu. Resetané okno alebo staré okno bez resettime sa skryje,nie0%. Account identity API neposkytuje,preto Claudeautoalerts/forecast withheld; prvý údaj pri migrácii nevytvorí falošný reset.
 
 Primárne docs: [Mods overview](https://code.claude.com/docs/en/plugins/mods/overview), [session.usage a session.measure](https://code.claude.com/docs/en/plugins/mods/reference), [Create/validate a mod](https://code.claude.com/docs/en/plugins/mods/create).
 
@@ -27,3 +27,8 @@ Codex docs tiež uvádzajú account/rateLimits/updated. Návrh na dlhšie otvore
 ## Pauzy a vysvetlenia1.3.1
 
 HTTP429 z Claude usage endpointu sa mapuje na dočasné obmedzenie quota checkov, nie na potvrdenie vyčerpanej subscription kvóty. QuotaBar má vlastnú600s pauzu (nie garanciu Anthropic); manuálny refresh ani reštart ju neobíde. Pauza sa ukladá lokálne. Pri chybe je ? hover/click vysvetlenie a čas ďalšieho pokusu. [Anthropic API rate limits](https://platform.claude.com/docs/en/api/rate-limits) dokumentujú429 a Retry-After pre verejné API; tieto Messages API limity nemožno preniesť na nedokumentovaný OAuth usage endpoint.
+
+## OAuth fallback1.5.0 — výslovne schválený Jarom
+GET https://api.anthropic.com/api/oauth/usage s existujúcim ClaudeCodeOAuth tokenom iba v pamäti. Odpoveď poskytuje `five_hour.utilization`, `seven_day.utilization`, prípadne modelové okná a `resets_at`. Percentá sú serverové,nie odvodené z lokálnych tokenlogs/správ;remaining je100 mínusused. Interný váhový výpočet Anthropic tento nedokumentovaný endpoint nevysvetľuje. QuotaBar neprihlasuje,neobnovuje ani neukladá credential.
+Freshlocal<=300s má prednosť;APIrequestminimumspacing300s,cachedAPI<=600s.429backoff900/1800/3600s a väčšíRetry-After(deadlinepersist). Lokálny read20s stálefungujepriAPIpause;fallbackerrorneprepíševalidlastknownako0%. Statusnotice vpopup/Details/tooltip. Ak obe okná chýbajú/resetli,APIpause sa ukáže ako unavailable. OAuthfingerprintnieverifiedaccountidentity,Claudeautoalerts/forecastsnaďalejwithheld.
+Toto je experimentálne opätovné zapojenie pôvodného nedokumentovaného endpointu na výslovný pokyn používateľa; nie garantovane podporovaná verejná integrácia. PredHomebrew/publicrelease prehodnotiť súlad s [Authentication and credential use](https://code.claude.com/docs/en/legal-and-compliance#authentication-and-credential-use).

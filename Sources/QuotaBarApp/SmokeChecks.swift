@@ -66,6 +66,7 @@ private actor LocalUsageFixtureProvider: UsageProvider {
         return snapshot
     }
     func capture(at date: Date) { snapshot = Self.measurement(at: date) }
+    func replace(_ value: UsageSnapshot) { snapshot = value; unavailable = false }
     func fail() { unavailable = true }
     func callCount() -> Int { calls }
 }
@@ -194,8 +195,78 @@ enum SmokeChecks {
         guard let loaded = try? await persistence.load(), loaded.samples.count == 2 else { return false }
         await store.clearHistory()
         guard store.history.samples.isEmpty, (try? await persistence.load())?.samples.isEmpty == true else { return false }
-        guard await verifyActivity(), await verifyLocalUsage() else { return false }
+        guard await verifyActivity(), await verifyLocalUsage(), await verifyHybridStore() else { return false }
         print("PASS store: stale retention, retry scheduling, manual recovery, 429 cooldown across restart, error help, history persistence/clear")
+        return true
+    }
+
+    private static func verifyHybridStore() async -> Bool {
+        let name = "QuotaBarHybridStoreChecks.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name) }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let captured = Date().addingTimeInterval(-1200)
+        let windows = [UsageWindow(id: "claude-five_hour", name: "5h", usedPercent: 42,
+            resetsAt: Date().addingTimeInterval(3600), durationMinutes: 300)]
+        let cached = UsageSnapshot(provider: .claude, plan: nil, windows: windows,
+            fetchedAt: captured, source: "Claude OAuth fallback", accountID: "opaque-fixture")
+        defaults.set(try? JSONEncoder().encode(cached), forKey: "cachedSnapshot.claude")
+        // The former global cooldown must not stop local bridge reads.
+        defaults.set(Date().addingTimeInterval(600), forKey: "rateLimitedUntil.claude")
+        let provider = LocalUsageFixtureProvider(capturedAt: captured)
+        await provider.replace(cached)
+        let store = UsageStore(providers: [provider], defaults: defaults,
+            historyPersistence: HistoryPersistence(url: directory.appendingPathComponent("history.json")),
+            networkAvailable: false, activityProbe: { _ in true })
+        guard store.states[.claude]?.snapshot == cached,
+              store.states[.claude]?.meterValue() == 42,
+              defaults.object(forKey: "rateLimitedUntil.claude") == nil else { return false }
+        let paused = UsageSnapshot(provider: .claude, plan: nil, windows: windows,
+            fetchedAt: captured, source: "Claude OAuth fallback", accountID: "opaque-fixture",
+            notice: "OAuth quota checks paused; last observed usage retained.")
+        await provider.replace(paused)
+        await store.refreshAll(force: true)
+        guard store.states[.claude]?.snapshot?.notice == paused.notice,
+              store.states[.claude]?.snapshot?.fetchedAt == captured,
+              store.states[.claude]?.errorMessage == nil,
+              store.states[.claude]?.meterValue() == 42,
+              store.history.samples.isEmpty else { return false }
+        // Source-only changes are not additional quota observations.
+        let local = UsageSnapshot(provider: .claude, plan: nil, windows: windows,
+            fetchedAt: captured, source: ClaudeSessionUsageProvider.sourceName)
+        await provider.replace(local)
+        await store.refreshAll(force: true)
+        guard store.history.samples.isEmpty, store.states[.claude]?.snapshot == local else { return false }
+        await provider.capture(at: Date())
+        await store.refreshAll(force: true)
+        guard await provider.callCount() == 3,
+              store.history.samples.count == 1,
+              store.states[.claude]?.errorMessage == nil else { return false }
+        let partial = UsageSnapshot(provider: .claude, plan: nil, windows: [
+            UsageWindow(id: "claude-seven_day", name: "7d", usedPercent: 12,
+                resetsAt: Date().addingTimeInterval(86400), durationMinutes: 10080)
+        ], fetchedAt: Date().addingTimeInterval(10), source: "Claude OAuth fallback")
+        defaults.set(try? JSONEncoder().encode(partial), forKey: "cachedSnapshot.claude")
+        let partialStore = UsageStore(providers: [provider], defaults: defaults,
+            historyPersistence: HistoryPersistence(url: directory.appendingPathComponent("partial-history.json")),
+            networkAvailable: false, activityProbe: { _ in true })
+        await provider.replace(local)
+        await partialStore.refreshAll(force: true)
+        guard partialStore.states[.claude]?.snapshot == local,
+              partialStore.states[.claude]?.meterValue() == 42,
+              partialStore.history.samples.isEmpty else { return false }
+        // Once a valid 5-hour meter is present, an older meter still cannot overwrite it.
+        let olderMeter = UsageSnapshot(provider: .claude, plan: nil, windows: [
+            UsageWindow(id: "claude-five_hour", name: "5h", usedPercent: 10,
+                resetsAt: Date().addingTimeInterval(3600), durationMinutes: 300)
+        ], fetchedAt: captured.addingTimeInterval(-10), source: ClaudeSessionUsageProvider.sourceName)
+        await provider.replace(olderMeter)
+        await partialStore.refreshAll(force: true)
+        guard partialStore.states[.claude]?.snapshot == local,
+              partialStore.states[.claude]?.meterValue() == 42,
+              partialStore.history.samples.isEmpty else { return false }
+        print("PASS hybrid store: OAuth cache, idle ring, notice/source deduplication, local read during 429, older valid 5h recovery from partial API response")
         return true
     }
 
@@ -376,6 +447,15 @@ enum SmokeChecks {
         guard idleStore.states[.claude]?.hasStaleData() == true,
               idleStore.states[.claude]?.meterValue() == 24,
               renderPopup(store: idleStore, path: base + "-idle.png", appearance: .aqua) else { return false }
+        let pausedSnapshots = snapshots.map { snapshot in
+            snapshot.provider == .claude ? UsageSnapshot(provider: .claude, plan: snapshot.plan, windows: snapshot.windows,
+                fetchedAt: now.addingTimeInterval(-1200), source: ClaudeOAuthUsageProvider.sourceName,
+                notice: "API fallback paused (HTTP 429) until 23:15; showing last observed usage when available.") : snapshot
+        }
+        let pausedStore = makeStore(pausedSnapshots)
+        await pausedStore.refreshAll(force: true)
+        guard pausedStore.states[.claude]?.meterValue() == 24,
+              renderPopup(store: pausedStore, path: base + "-api-pause.png", appearance: .aqua) else { return false }
         let extraSnapshots = snapshots.map { snapshot in
             UsageSnapshot(provider: snapshot.provider, plan: snapshot.plan, windows: snapshot.windows + (0..<8).map { index in
                 UsageWindow(id: "model-\(index)", name: "Additional model \(index)", usedPercent: Double(90 + index),

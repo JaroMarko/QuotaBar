@@ -130,11 +130,15 @@ struct ProviderCard: View {
                     Text("5-hour quota unavailable — ring unconfirmed").font(.caption2).foregroundStyle(.orange)
                 }
                 if state.hasStaleData() && state.errorMessage == nil {
-                    Label(snapshot.source == ClaudeSessionUsageProvider.sourceName
-                          ? "Last observed \(snapshot.fetchedAt.formatted(date: .omitted, time: .shortened)) — updates automatically in Code"
+                    Label(state.provider == .claude && ClaudeHybridUsageProvider.supports(snapshot)
+                          ? "Last observed \(snapshot.fetchedAt.formatted(date: .omitted, time: .shortened)) — awaiting a newer measurement"
                           : "Last known usage — current quota unconfirmed", systemImage: "clock.badge.exclamationmark")
                         .font(.caption2).foregroundStyle(.orange)
                 }
+            }
+            if !state.isInactive, let notice = state.snapshot?.notice {
+                Label(notice, systemImage: "info.circle")
+                    .font(.caption2).foregroundStyle(.secondary)
             }
             if !state.isInactive, let error = state.errorMessage {
                 ProviderErrorNotice(state: state, message: error, nextRetry: nextRetry)
@@ -280,12 +284,13 @@ struct ProviderDetailsView: View {
                             Text("Measured \(snapshot.fetchedAt.formatted(date: .abbreviated, time: .standard))")
                             Text(snapshot.source ?? "Legacy cached measurement")
                             Text(snapshot.account ?? "Account identity not supplied by this source")
+                            if let notice = snapshot.notice { Label(notice, systemImage: "info.circle") }
                             if state.hasStaleData() {
                                 Text("Last known data — current quota is unconfirmed").foregroundStyle(.orange)
                             }
                         }.font(.caption).foregroundStyle(.secondary)
                         ForEach(snapshot.windows) { window in
-                            UsageWindowDetailRow(window: window, isStale: state.hasStaleData(), isMeterWindow: window.id == snapshot.meterWindow?.id, samples: history.series(for: snapshot, window: window))
+                            UsageWindowDetailRow(window: window, isStale: state.hasStaleData(), allowsForecast: state.provider != .claude, isMeterWindow: window.id == snapshot.meterWindow?.id, samples: history.series(for: snapshot, window: window))
                             Divider()
                         }
                     } else {
@@ -312,6 +317,7 @@ private func usageColor(_ percent: Double) -> Color {
 struct UsageWindowDetailRow: View {
     let window: UsageWindow
     var isStale = false
+    var allowsForecast = true
     var isMeterWindow = false
     var samples: [UsageSample] = []
 
@@ -341,7 +347,7 @@ struct UsageWindowDetailRow: View {
                 Text("Reset: \(reset.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption2).foregroundStyle(.secondary)
             }
-            if !isStale, let forecast = UsageForecast.estimate(samples: samples, now: Date()) {
+            if allowsForecast, !isStale, let forecast = UsageForecast.estimate(samples: samples, now: Date()) {
                 Text(forecast.estimatedExhaustion.map { "Estimated exhaustion: \($0.formatted(date: .omitted, time: .shortened))" }
                      ?? "At recent pace: no projected exhaustion before reset")
                     .font(.caption2).foregroundStyle(.secondary)
@@ -385,7 +391,7 @@ struct SettingsView: View {
             }
             Section("General") {
                 Toggle("Launch QuotaBar at login", isOn: $preferences.launchAtLogin)
-                Text("Claude: reads local measurements every 20 seconds. Codex: adaptive checks every 1–5 minutes.")
+                Text("Claude: local reads every 20 seconds; OAuth fallback at most every 5 minutes. Codex: checks every 1–5 minutes.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if let error = preferences.launchAtLoginError {
@@ -393,7 +399,7 @@ struct SettingsView: View {
                 }
             }
             Section("Notifications") {
-                Text("Claude automatic alerts require account identity, which this local source does not provide. Codex alerts and the notification preview remain available.").font(.caption).foregroundStyle(.secondary)
+                Text("Claude automatic alerts and forecasts are paused until account identity is verified across its two sources. Codex alerts and the notification preview remain available.").font(.caption).foregroundStyle(.secondary)
                 Toggle("At 75% used", isOn: $preferences.notification75)
                 Toggle("At 90% used", isOn: $preferences.notification90)
                 Toggle("At 100% used", isOn: $preferences.notification100)
@@ -412,7 +418,7 @@ struct SettingsView: View {
                 }
             }
             Section("Privacy") {
-                Text("Claude limits arrive locally from the Claude Code session.usage bridge; no Claude credentials or HTTP quota requests. Codex uses its existing CLI login. No analytics or telemetry.")
+                Text("Claude prefers session.usage; an experimental OAuth fallback checks usage when local data is missing or over 5 minutes old. HTTP 429 pauses OAuth for 15–60 minutes. Existing Claude/Codex logins are read without storing or refreshing credentials. No analytics or telemetry.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

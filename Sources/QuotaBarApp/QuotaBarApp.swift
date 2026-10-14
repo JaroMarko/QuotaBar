@@ -82,7 +82,8 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
             let observed = state.snapshot.map { snapshot in
                 state.hasStaleData() ? " · last observed " + DateFormatter.localizedString(from: snapshot.fetchedAt, dateStyle: .short, timeStyle: .short) : ""
             } ?? ""
-            return "\(state.provider.displayName): \(detail)\(observed)"
+            let notice = state.snapshot?.notice.map { " · " + $0 } ?? ""
+            return "\(state.provider.displayName): \(detail)\(observed)\(notice)"
         }.joined(separator: "\n")
         statusItem?.button?.setAccessibilityLabel("QuotaBar. " + UsageStore.shared.preferences.menuBarMode.explanation)
     }

@@ -9,3 +9,5 @@ Validate/test: `claude plugin validate integrations/claude-quotabar --strict` an
 Sources: [mods](https://code.claude.com/docs/en/plugins/mods/overview), [session usage API](https://code.claude.com/docs/en/plugins/mods/reference).
 
 Install from this local checkout: `claude plugin install quotabar-usage --marketplace ./integrations`.
+
+QuotaBar1.5.0 may additionally use its experimental OAuth fallback when these local measurements are absent or old; this mod itself still makes no network calls and does not access credentials.

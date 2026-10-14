@@ -53,8 +53,9 @@ public struct UsageSnapshot: Codable, Equatable, Sendable {
     public let source: String?
     public let account: String?
     public let accountID: String?
+    public let notice: String?
 
-    public init(provider: ProviderKind, plan: String?, windows: [UsageWindow], fetchedAt: Date, source: String? = nil, account: String? = nil, accountID: String? = nil) {
+    public init(provider: ProviderKind, plan: String?, windows: [UsageWindow], fetchedAt: Date, source: String? = nil, account: String? = nil, accountID: String? = nil, notice: String? = nil) {
         self.provider = provider
         self.plan = plan
         self.windows = windows
@@ -62,6 +63,7 @@ public struct UsageSnapshot: Codable, Equatable, Sendable {
         self.source = source
         self.account = account
         self.accountID = accountID
+        self.notice = notice
     }
 
     public var accountScope: String { accountID ?? account ?? "unknown" }
@@ -98,7 +100,7 @@ public enum ProviderError: LocalizedError, Equatable, Sendable {
     public var recoveryExplanation: String {
         switch self {
         case .localBridgeUnavailable:
-            "Open a local Claude Code session with the QuotaBar mod enabled and send a message. Usage is updated after Claude Code receives a response. Ordinary Claude Chat does not provide this local usage source; QuotaBar does not make OAuth usage requests."
+            "Open a local Claude Code session with the QuotaBar mod enabled and send a message. Usage is updated after Claude Code receives a response. Ordinary Claude Chat does not provide this local usage source. QuotaBar can try an experimental read-only OAuth fallback when local data is missing or old; API cooldowns do not prevent new Code observations."
         case .rateLimited:
             "The provider temporarily rejected requests to read usage (HTTP 429). This does not by itself mean your subscription quota is exhausted. QuotaBar pauses checks for 10 minutes, then retries automatically. The provider may continue limiting requests after that. Shown percentages are last known values. Refresh and restarting QuotaBar do not bypass this pause."
         case .networkUnavailable:
@@ -181,7 +183,7 @@ public struct ProviderDisplayState: Identifiable, Sendable {
 
     public func meterValue(at now: Date = Date()) -> Double? {
         guard !isInactive, let snapshot, let window = snapshot.meterWindow else { return nil }
-        if provider == .claude && snapshot.source == ClaudeSessionUsageProvider.sourceName {
+        if provider == .claude && ClaudeHybridUsageProvider.supports(snapshot) {
             // Idle Code keeps the last observed usage visible until this specific window resets.
             // A missing/invalid bridge or unverified activity must still hide the ring.
             guard errorMessage == nil,

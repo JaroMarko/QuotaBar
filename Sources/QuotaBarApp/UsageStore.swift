@@ -34,7 +34,7 @@ final class UsageStore: ObservableObject {
     private var presence: [ProviderKind: Bool] = [:]
     private var pendingSourceMigration: Set<ProviderKind> = []
 
-    init(providers: [any UsageProvider] = [ClaudeSessionUsageProvider(), CodexUsageProvider()],
+    init(providers: [any UsageProvider] = [ClaudeHybridUsageProvider(), CodexUsageProvider()],
          preferences: AppPreferences? = nil, defaults: UserDefaults = .standard,
          historyPersistence: HistoryPersistence = HistoryPersistence(), networkAvailable: Bool = true,
          activityProbe: @escaping @MainActor (ProviderKind) -> Bool? = { ProviderActivityProbe.isRunning($0) }) {
@@ -49,14 +49,14 @@ final class UsageStore: ObservableObject {
         else { ledger = AlertLedger() }
         for provider in providers where !provider.requiresNetwork {
             if let cached = Self.loadCachedSnapshot(for: provider.kind, defaults: defaults),
-               cached.source != ClaudeSessionUsageProvider.sourceName {
+               provider.kind == .claude, !ClaudeHybridUsageProvider.supports(cached) {
                 pendingSourceMigration.insert(provider.kind)
             }
         }
         states = Dictionary(uniqueKeysWithValues: ProviderKind.allCases.map { kind in
             var cached = Self.loadCachedSnapshot(for: kind, defaults: defaults)
             if kind == .claude, providers.contains(where: { $0.kind == kind && !$0.requiresNetwork }),
-               cached?.source != ClaudeSessionUsageProvider.sourceName {
+               cached.map({ !ClaudeHybridUsageProvider.supports($0) }) == true {
                 cached = nil
                 defaults.removeObject(forKey: "cachedSnapshot.\(kind.rawValue)")
             }
@@ -220,14 +220,19 @@ final class UsageStore: ObservableObject {
                 let local = providers.first(where: { $0.kind == kind })?.requiresNetwork == false
                 switch result {
                 case let .success(snapshot):
-                    // Parallel sessions can write the cache while a refresh is pending.
-                    // Never let an older capture overwrite a newer measurement.
-                    if local, let previous, snapshot.fetchedAt < previous.fetchedAt {
+                    // Preserve newer captures, except when hybrid source selection restores
+                    // the valid Claude 5-hour window missing from a newer partial response.
+                    let restoresClaudeMeter = kind == .claude && local
+                        && Self.hasValidClaudeMeter(snapshot)
+                        && !Self.hasValidClaudeMeter(previous)
+                    if local, let previous, snapshot.fetchedAt < previous.fetchedAt, !restoresClaudeMeter {
                         states[kind]?.isRefreshing = false
                         nextRefreshAt[kind] = Date().addingTimeInterval(20)
                         continue
                     }
-                    let newCapture = previous?.fetchedAt != snapshot.fetchedAt
+                    let newCapture = previous.map {
+                        local ? snapshot.fetchedAt > $0.fetchedAt : snapshot.fetchedAt != $0.fetchedAt
+                    } ?? true
                     let migrated = pendingSourceMigration.remove(kind) != nil
                     states[kind] = ProviderDisplayState(provider: kind, snapshot: snapshot,
                         errorMessage: nil, isRefreshing: false, isStale: inactive || unverified, isInactive: inactive)
@@ -242,7 +247,8 @@ final class UsageStore: ObservableObject {
                         catch { historyError = "Local history could not be saved." }
                     }
                     synchronizeActivity()
-                    if presence[kind] != true || (local && snapshot.accountScope == "unknown") { continue }
+                    // Claude sources do not yet share a verified account identity.
+                    if presence[kind] != true || kind == .claude { continue }
                     let alerts = ledger.take(previous: previous, current: snapshot,
                         thresholds: preferences.enabledThresholds, resetEnabled: preferences.notificationReset)
                     if let data = try? JSONEncoder().encode(ledger) { defaults.set(data, forKey: "alertLedger") }
@@ -275,6 +281,13 @@ final class UsageStore: ObservableObject {
             try await historyPersistence.save(empty)
             history = empty; historyError = nil; historyWritable = true
         } catch { historyError = "Local history could not be cleared." }
+    }
+
+    private static func hasValidClaudeMeter(_ snapshot: UsageSnapshot?, now: Date = Date()) -> Bool {
+        guard let snapshot, snapshot.provider == .claude,
+              ClaudeHybridUsageProvider.supports(snapshot), let window = snapshot.meterWindow else { return false }
+        if let reset = window.resetsAt { return reset > now }
+        return now.timeIntervalSince(snapshot.fetchedAt) <= 600
     }
 
     private static func cache(_ snapshot: UsageSnapshot, defaults: UserDefaults) {

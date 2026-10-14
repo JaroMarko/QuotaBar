@@ -1,6 +1,6 @@
 import Foundation
 
-// Legacy payload decoder retained for historical fixture compatibility only.
+// Decode server-reported subscription utilization and reset windows for the OAuth fallback.
 public enum ClaudeUsageDecoder {
     private static let preferredKeys = [
         "five_hour", "seven_day", "seven_day_sonnet", "seven_day_opus",
