@@ -28,6 +28,7 @@ swift build \
 mkdir -p "$app_path/Contents/MacOS" "$app_path/Contents/Resources"
 cp "$build_root/release/QuotaBar" "$app_path/Contents/MacOS/QuotaBar"
 cp "$project_root/Resources/Info.plist" "$app_path/Contents/Info.plist"
+cp "$project_root/Resources/Icons/openai-blossom.svg" "$app_path/Contents/Resources/openai-blossom.svg"
 chmod 755 "$app_path/Contents/MacOS/QuotaBar"
 
 plutil -lint "$app_path/Contents/Info.plist"

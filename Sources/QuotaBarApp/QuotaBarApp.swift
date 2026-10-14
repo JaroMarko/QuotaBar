@@ -23,7 +23,7 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate {
             SmokeChecks.writeIconPreview(path: args[index + 1]); NSApplication.shared.terminate(nil); return
         }
         let store = UsageStore.shared
-        statusItem = NSStatusBar.system.statusItem(withLength: 48)
+        statusItem = NSStatusBar.system.statusItem(withLength: MenuBarIcon.size.width + 4)
         statusItem?.button?.target = self
         statusItem?.button?.action = #selector(togglePopover)
         popover.behavior = .transient

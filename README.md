@@ -28,7 +28,7 @@ The app build uses the native SwiftPM build system and macOS 26.5 SDK when avail
 
 ## Monitoring and privacy
 
-- Menu bar: graphical Claude/Codex consumed-quota rings, no text. The most-used reported window is displayed; dotted rings mean current data is unavailable/stale.
+- Menu bar: graphical Clawd-style Claude mascot and official OpenAI Blossom for Codex, inside consumed-quota rings, no text. The most-used reported window is displayed; dotted rings mean current data is unavailable/stale.
 - Menu: all returned windows, exact reset time, measurement timestamp and data source. Claude's usage endpoint does not supply confirmed account identity; its history is scoped to an opaque session fingerprint. Token renewal starts a new scope.
 - Refresh: 1 minute while usage changes, usage is high or reset is near; 5 minutes when quiet. Errors back off to 15 minutes, and 429 responses enforce a 10-minute cooldown even for manual refresh.
 - Quota history: local `~/Library/Application Support/QuotaBar/history.json`, limited to 30 days and 10,000 samples. No prompts/transcripts are read. Clear it from the menu's trash button.

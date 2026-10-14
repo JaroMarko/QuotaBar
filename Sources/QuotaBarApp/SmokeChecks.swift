@@ -73,8 +73,9 @@ enum SmokeChecks {
     static func writeIconPreview(path: String) {
         let now = Date()
         let combinations: [(Double?, Double?)] = [(10,25),(60,85),(100,100),(nil,nil)]
-        let image = NSImage(size: NSSize(width: 400, height: 90), flipped: false) { _ in
-            NSColor.white.setFill(); NSBezierPath(rect: NSRect(x: 0,y: 0,width: 400,height: 90)).fill()
+        print("OpenAI artwork loaded: \(MenuBarIcon.hasOpenAIArtwork)")
+        let image = NSImage(size: NSSize(width: 440, height: 100), flipped: false) { _ in
+            NSColor.white.setFill(); NSBezierPath(rect: NSRect(x: 0,y: 0,width: 440,height: 100)).fill()
             for (index, values) in combinations.enumerated() {
                 let states = zip([ProviderKind.claude,.codex], [values.0,values.1]).map { kind, used in
                     ProviderDisplayState(provider: kind, snapshot: used.map { value in
@@ -83,9 +84,9 @@ enum SmokeChecks {
                     }, errorMessage: nil, isRefreshing: false, isStale: false)
                 }
                 let icon = MenuBarIcon.image(states: states, now: now)
-                icon.draw(in: NSRect(x: 25 + CGFloat(index)*100,y: 42,width: 46,height: 20))
+                icon.draw(in: NSRect(x: 24 + CGFloat(index)*110,y: 48,width: MenuBarIcon.size.width,height: MenuBarIcon.size.height))
                 let label = values.0 == nil ? "Unavailable" : "\(Int(values.0!)) / \(Int(values.1!))% used"
-                (label as NSString).draw(at: NSPoint(x: 8 + CGFloat(index)*100,y: 15),
+                (label as NSString).draw(at: NSPoint(x: 14 + CGFloat(index)*110,y: 15),
                     withAttributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: NSColor.black])
             }
             return true

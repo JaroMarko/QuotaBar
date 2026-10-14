@@ -28,3 +28,6 @@ The application smoke process hung in SwiftUI MenuBarExtraController.updateButto
 Native startup smoke succeeded with both live providers and local history. Additional unknown opaque top-level fields are not inferred as quota windows; known five-hour/seven-day families and model-scoped limits are decoded. Icon preview rendered from the actual AppKit code. Release version is 1.1.0.
 
 Final review: bounded subprocess input, cleanup on input errors and history suppression for unknown reset cycles added. 47 checks and store integration passed. Expanded package signature/hash passed. GUI screenshot tooling returned a blank Finder surface; no interactive GUI validation claim is made. Public signing/notarization needs an existing Developer ID certificate.
+
+## Readable provider icons (1.1.1)
+Jaro reported the 9pt symbols were illegible. Replaced them with a bold 16x14pt Clawd-style pixel mascot and OpenAI's official unmodified Blossom SVG; increased ring canvas from 20pt to 24pt and total icon width from 46pt to 60pt. Numeric text stays outside the menu bar.
