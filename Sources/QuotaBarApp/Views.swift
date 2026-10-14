@@ -299,6 +299,8 @@ struct UsageWindowDetailRow: View {
 
 struct SettingsView: View {
     @ObservedObject var preferences: AppPreferences
+    @State private var sendingTest = false
+    @State private var testMessage: String?
 
     var body: some View {
         Form {
@@ -316,6 +318,18 @@ struct SettingsView: View {
                 Toggle("At 90% used", isOn: $preferences.notification90)
                 Toggle("At 100% used", isOn: $preferences.notification100)
                 Toggle("When a usage window resets", isOn: $preferences.notificationReset)
+                Button(sendingTest ? "Sending…" : "Send test notification") {
+                    sendingTest = true
+                    testMessage = nil
+                    Task {
+                        testMessage = await NotificationService().sendTest()
+                        sendingTest = false
+                    }
+                }.disabled(sendingTest)
+                if let testMessage {
+                    Text(testMessage).font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Section("Privacy") {
                 Text("QuotaBar reads existing Codex and Claude Code sessions only when refreshing. Credentials are never stored or logged. No analytics or telemetry are collected.")
@@ -325,7 +339,7 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .padding(8)
-        .frame(width: 460, height: 390)
+        .frame(width: 460, height: 500)
     }
 }
 

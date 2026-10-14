@@ -66,7 +66,7 @@ private enum CodexRPCSession {
             "id": 1,
             "method": "initialize",
             "params": [
-                "clientInfo": ["name": "QuotaBar", "version": "1.2.3"],
+                "clientInfo": ["name": "QuotaBar", "version": "1.2.4"],
                 "capabilities": ["experimentalApi": false]
             ]
         ], to: inputPipe.fileHandleForWriting)

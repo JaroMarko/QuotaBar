@@ -2,9 +2,10 @@ import AppKit
 import Combine
 import QuotaBarCore
 import SwiftUI
+import UserNotifications
 
 @MainActor
-final class QuotaBarDelegate: NSObject, NSApplicationDelegate {
+final class QuotaBarDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     static weak var shared: QuotaBarDelegate?
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
@@ -31,6 +32,7 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate {
         if args.contains("--verify-menu") {
             exit(SmokeChecks.verifyMenu() ? 0 : 1)
         }
+        UNUserNotificationCenter.current().delegate = self
         let store = UsageStore.shared
         statusItem = NSStatusBar.system.statusItem(withLength: MenuBarIcon.size.width + 4)
         statusItem?.button?.target = self
@@ -52,6 +54,13 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate {
         if let index = args.firstIndex(of: "--smoke-report"), args.count > index + 1 {
             Task { await SmokeChecks.writeLiveReport(path: args[index + 1]) }
         }
+    }
+
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        // Show quota alerts and previews while Settings/the popover is active.
+        completionHandler([.banner, .sound])
     }
 
     private func updateIcon() {
@@ -110,7 +119,7 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate {
     func showSettings() {
         popover.performClose(nil)
         if settingsWindow == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0,y: 0,width: 460,height: 390),
+            let window = NSWindow(contentRect: NSRect(x: 0,y: 0,width: 460,height: 500),
                 styleMask: [.titled,.closable], backing: .buffered, defer: false)
             window.title = "QuotaBar Settings"; window.isReleasedWhenClosed = false
             window.contentViewController = NSHostingController(rootView: SettingsView(preferences: UsageStore.shared.preferences))

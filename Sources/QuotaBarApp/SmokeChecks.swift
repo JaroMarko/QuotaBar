@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import QuotaBarCore
 import SwiftUI
+import UserNotifications
 
 // Explicit developer-only commands; fixtures never use provider credentials.
 actor FixtureProvider: UsageProvider {
@@ -44,6 +45,11 @@ enum SmokeChecks {
               StatusInteraction.isContextClick(event(.rightMouseUp)),
               StatusInteraction.isContextClick(event(.leftMouseUp, flags: .control)),
               !StatusInteraction.isContextClick(nil) else { return false }
+        let preview = NotificationService.testRequest()
+        guard preview.content.title == "QuotaBar test notification",
+              preview.content.body.contains("have not changed"), preview.trigger == nil,
+              preview.content.sound != nil,
+              preview.identifier != NotificationService.testRequest().identifier else { return false }
         let menu = StatusInteraction.contextMenu()
         guard menu.items.count == 1, let quit = menu.items.first,
               quit.action == #selector(NSApplication.terminate(_:)),
@@ -57,7 +63,7 @@ enum SmokeChecks {
         controller.view.layoutSubtreeIfNeeded()
         let size = controller.view.fittingSize
         guard size.width == 410, size.height > 150, size.height < 350 else { return false }
-        print("PASS menu: hosted size \(size), centred anchor, left/right/control click routing, Quit target")
+        print("PASS menu: hosted size \(size), centred anchor, left/right/control click routing, Quit target, test notification payload")
         return true
     }
 

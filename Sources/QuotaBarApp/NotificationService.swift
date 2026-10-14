@@ -7,6 +7,27 @@ actor NotificationService {
         _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
     }
 
+    static func testRequest() -> UNNotificationRequest {
+        let content = UNMutableNotificationContent()
+        content.title = "QuotaBar test notification"
+        content.body = "This is a preview. Your usage limits have not changed."
+        content.sound = .default
+        return UNNotificationRequest(identifier: "test-" + UUID().uuidString, content: content, trigger: nil)
+    }
+
+    func sendTest() async -> String {
+        let center = UNUserNotificationCenter.current()
+        do {
+            guard try await center.requestAuthorization(options: [.alert, .sound]) else {
+                return "Notifications are disabled. Enable QuotaBar in System Settings → Notifications."
+            }
+            try await center.add(Self.testRequest())
+            return "Sent to macOS. If no banner appears, check Notifications and Focus settings."
+        } catch {
+            return "Test notification failed: \(error.localizedDescription)"
+        }
+    }
+
     func send(_ alert: UsageAlert) async {
         let content = UNMutableNotificationContent()
         content.sound = .default

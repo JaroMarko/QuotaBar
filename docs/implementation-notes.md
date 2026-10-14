@@ -47,3 +47,6 @@ Before opening, resolve the hosted view fitting size and use preferredContentSiz
 
 ## Circular quota tiles (1.2.2)
 Main popup quota rows become side-by-side tiles:48pt circular progress with percentage/used in centre, quota name and reset below, Bar badge retained. Native rendering checks cover light/dark,stale,missing,error and additional-model quotas. Only overview presentation changes; ring selection,providers,history,details and mouse interactions are unchanged.
+
+## Test notifications (1.2.4)
+Settings includes Send test notification, permission/error feedback and a pending state to prevent duplicate clicks. The preview is clearly labelled and bypasses quota/alert ledger changes. App delegate opts into foreground banner+sound for both real alerts and previews. macOS retains notification/Focus control. Payload checks do not request permission or send test notifications; live UI delivery must be checked separately.

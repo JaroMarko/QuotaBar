@@ -34,6 +34,7 @@ The app build uses the native SwiftPM build system and macOS 26.5 SDK when avail
 - Refresh: 1 minute while usage changes, usage is high or reset is near; 5 minutes when quiet. Errors back off to 15 minutes, and 429 responses enforce a 10-minute cooldown even for manual refresh.
 - Quota history: local `~/Library/Application Support/QuotaBar/history.json`, limited to 30 days and 10,000 samples. No prompts/transcripts are read. Clear it from the menu's trash button.
 - Forecasts need >=3 recent monotonic samples spanning >=10 minutes in the same account/window/reset cycle. They are estimates and disappear when their assumptions fail.
+- Settings → Notifications includes Send test notification; it reports missing permission/errors and never modifies quota history or notification deduplication. Banners can also appear while QuotaBar is active, subject to macOS notification and Focus settings.
 - Settings and notification deduplication use the existing `com.jaroslavmarko.planmeter` preferences domain. Original provider credentials are never rewritten.
 
 ## Verification
