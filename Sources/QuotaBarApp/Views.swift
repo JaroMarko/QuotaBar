@@ -5,27 +5,31 @@ import SwiftUI
 
 struct QuotaBarMenuView: View {
     @ObservedObject var store: UsageStore
+    var refreshOnAppear = true
     @State private var showingAbout = false
     @State private var confirmingClearHistory = false
 
     var body: some View {
-        VStack(spacing: 12) {
-            header
-            ScrollView {
-                VStack(spacing: 10) {
-                    ForEach(store.orderedStates) { state in
-                        ProviderCard(state: state, history: store.history)
-                    }
+        TimelineView(.periodic(from: .now, by: 60)) { _ in
+            VStack(spacing: 10) {
+                header
+                ForEach(store.orderedStates) { state in
+                    ProviderCard(state: state)
                 }
+                Text("Rings: Claude 5h · Codex most-used window")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if let error = store.historyError {
+                    Text(error).font(.caption2).foregroundStyle(.orange)
+                }
+                Divider()
+                footer
             }
-            .frame(maxHeight: 470)
-            capacityOverview
-            if let error = store.historyError { Text(error).font(.caption2).foregroundStyle(.orange) }
-            footer
+            .padding(14)
+            .frame(width: 410)
         }
-        .padding(14)
-        .frame(width: 410)
-        .task { await store.refreshIfStale() }
+        .task { if refreshOnAppear { await store.refreshIfStale() } }
         .sheet(isPresented: $showingAbout) { AboutView() }
         .confirmationDialog("Clear local usage history?", isPresented: $confirmingClearHistory) {
             Button("Clear history", role: .destructive) { Task { await store.clearHistory() } }
@@ -34,18 +38,14 @@ struct QuotaBarMenuView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .center) {
+        HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("QuotaBar")
-                    .font(.headline)
-                Text(store.networkAvailable ? lastUpdatedText : "Offline — showing last known data")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text("QuotaBar").font(.headline)
+                Text(store.networkAvailable ? lastUpdatedText : "Offline — last known data")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Button {
-                Task { await store.refreshAll(force: true) }
-            } label: {
+            Button { Task { await store.refreshAll(force: true) } } label: {
                 Image(systemName: "arrow.clockwise")
             }
             .buttonStyle(.borderless)
@@ -59,34 +59,15 @@ struct QuotaBarMenuView: View {
         HStack(spacing: 14) {
             Button { QuotaBarDelegate.shared?.showSettings() } label: {
                 Label("Settings", systemImage: "gearshape")
-            }
-            .buttonStyle(.borderless)
-            Button("About") { showingAbout = true }
-                .buttonStyle(.borderless)
+            }.buttonStyle(.borderless)
+            Button("About") { showingAbout = true }.buttonStyle(.borderless)
             Button { confirmingClearHistory = true } label: { Image(systemName: "trash") }
                 .help("Clear local usage history")
+                .accessibilityLabel("Clear local usage history")
                 .buttonStyle(.borderless)
             Spacer()
-            Button("Quit") { NSApplication.shared.terminate(nil) }
-                .buttonStyle(.borderless)
-        }
-        .font(.caption)
-    }
-
-    private var capacityOverview: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text("Available headroom").font(.caption.weight(.semibold))
-            ForEach(store.orderedStates) { state in
-                HStack {
-                    Image(systemName: state.provider.symbolName)
-                    Text(state.provider.displayName)
-                    Spacer()
-                    if let used = state.meterValue() {
-                        Text("\(UsageFormatting.percent(100 - used)) remaining in tightest reported window")
-                    } else { Text("Unconfirmed") }
-                }.font(.caption2).foregroundStyle(.secondary)
-            }
-        }.frame(maxWidth: .infinity, alignment: .leading)
+            Button("Quit") { NSApplication.shared.terminate(nil) }.buttonStyle(.borderless)
+        }.font(.caption)
     }
 
     private var lastUpdatedText: String {
@@ -97,81 +78,147 @@ struct QuotaBarMenuView: View {
 
 struct ProviderCard: View {
     let state: ProviderDisplayState
-    let history: UsageHistory
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Image(systemName: state.provider.symbolName)
-                    .foregroundStyle(accent)
-                Text(state.provider.displayName)
-                    .font(.headline)
+                Image(systemName: state.provider.symbolName).foregroundStyle(accent)
+                Text(state.provider.displayName).font(.headline)
                 if let plan = state.snapshot?.plan, !plan.isEmpty {
-                    Text(plan)
-                        .font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background(accent.opacity(0.12), in: Capsule())
-                        .foregroundStyle(accent)
+                    Text(plan).font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
                 if state.isRefreshing { ProgressView().controlSize(.small) }
-                if state.hasStaleData() {
-                    Image(systemName: "clock.badge.exclamationmark")
-                        .foregroundStyle(.secondary)
-                        .help("Showing last known usage")
-                }
+                Button(detailLabel) { QuotaBarDelegate.shared?.showDetails(for: state.provider) }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                    .foregroundStyle(.tint)
+                    .accessibilityLabel("\(state.provider.displayName) usage details")
             }
-
             if let snapshot = state.snapshot {
-                ForEach(snapshot.windows) { window in
-                    UsageWindowRow(window: window, isStale: state.hasStaleData(), isTightest: window.id == snapshot.windows.max(by: { $0.clampedUsedPercent < $1.clampedUsedPercent })?.id, samples: history.series(for: snapshot, window: window))
-                    if window.id != snapshot.windows.last?.id {
-                        Divider().opacity(0.55)
-                    }
+                ForEach(overviewWindows) { window in
+                    CompactUsageWindowRow(window: window, isMeterWindow: window.id == snapshot.meterWindow?.id)
                 }
-            }
-
-            if let snapshot = state.snapshot {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Measured \(snapshot.fetchedAt.formatted(date: .abbreviated, time: .standard))")
-                    Text(snapshot.source ?? "Legacy cached measurement")
-                    Text(snapshot.account ?? "Account identity not supplied by this source")
-                    if state.hasStaleData() { Text("Last known data — current quota is unconfirmed").foregroundStyle(.orange) }
+                if state.provider == .claude && snapshot.meterWindow == nil {
+                    Text("5-hour quota unavailable — ring unconfirmed").font(.caption2).foregroundStyle(.orange)
                 }
-                .font(.caption2).foregroundStyle(.secondary)
+                if state.hasStaleData() && state.errorMessage == nil {
+                    Label("Last known usage — current quota unconfirmed", systemImage: "clock.badge.exclamationmark")
+                        .font(.caption2).foregroundStyle(.orange)
+                }
             }
             if let error = state.errorMessage {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Label(state.hasStaleData() ? "Last known usage · \(error)" : error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption2).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
-            } else if state.snapshot == nil && !state.isRefreshing {
-                Text("No usage data yet.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            } else if state.snapshot == nil {
+                Text(state.isRefreshing ? "Checking usage…" : "No usage data yet.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
         .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.75)
-        )
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(nsColor: .separatorColor), lineWidth: 0.75))
     }
 
-    private var accent: Color {
-        state.provider == .claude ? .orange : .indigo
+    // Keep shared quotas visible, and include the ring's window if model-specific.
+    // Other model limits remain available in Details without growing the popover.
+    private var overviewWindows: [UsageWindow] {
+        guard let snapshot = state.snapshot else { return [] }
+        var windows = Array(snapshot.windows.prefix(2))
+        if let meter = snapshot.meterWindow, !windows.contains(where: { $0.id == meter.id }) {
+            windows.append(meter)
+        }
+        return windows
+    }
+
+    private var detailLabel: String {
+        let extra = (state.snapshot?.windows.count ?? 0) - overviewWindows.count
+        return extra > 0 ? "Details (+\(extra))" : "Details"
+    }
+
+    private var accent: Color { state.provider == .claude ? .orange : .indigo }
+}
+
+struct CompactUsageWindowRow: View {
+    let window: UsageWindow
+    let isMeterWindow: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(window.name).font(.subheadline.weight(.medium))
+                if isMeterWindow {
+                    Text("Bar")
+                        .font(.caption2.weight(.medium)).foregroundStyle(.secondary)
+                        .padding(.horizontal, 4)
+                        .background(.quaternary, in: Capsule())
+                        .help("Shown in the menu bar ring")
+                        .accessibilityLabel("Shown in the menu bar ring")
+                }
+                Spacer(minLength: 6)
+                Text("\(UsageFormatting.percent(window.clampedUsedPercent)) used")
+                    .font(.subheadline.monospacedDigit().weight(.semibold))
+            }
+            ProgressView(value: window.clampedUsedPercent, total: 100)
+                .tint(usageColor(window.clampedUsedPercent))
+                .accessibilityLabel("\(window.name) usage")
+                .accessibilityValue("\(UsageFormatting.percent(window.clampedUsedPercent)) used, \(UsageFormatting.percent(window.remainingPercent)) remaining")
+            Text(UsageFormatting.countdown(to: window.resetsAt))
+                .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 2)
     }
 }
 
-struct UsageWindowRow: View {
+struct ProviderDetailsView: View {
+    let state: ProviderDisplayState
+    let history: UsageHistory
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { _ in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("\(state.provider.displayName) details").font(.title2.weight(.semibold))
+                    if let snapshot = state.snapshot {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Measured \(snapshot.fetchedAt.formatted(date: .abbreviated, time: .standard))")
+                            Text(snapshot.source ?? "Legacy cached measurement")
+                            Text(snapshot.account ?? "Account identity not supplied by this source")
+                            if state.hasStaleData() {
+                                Text("Last known data — current quota is unconfirmed").foregroundStyle(.orange)
+                            }
+                        }.font(.caption).foregroundStyle(.secondary)
+                        ForEach(snapshot.windows) { window in
+                            UsageWindowDetailRow(window: window, isStale: state.hasStaleData(), isMeterWindow: window.id == snapshot.meterWindow?.id, samples: history.series(for: snapshot, window: window))
+                            Divider()
+                        }
+                    } else {
+                        Text("No usage data yet.").foregroundStyle(.secondary)
+                    }
+                    if let error = state.errorMessage {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
+                }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+}
+
+private func usageColor(_ percent: Double) -> Color {
+    switch percent {
+    case 100...: .red
+    case 90...: .orange
+    case 75...: .yellow
+    default: .indigo
+    }
+}
+
+struct UsageWindowDetailRow: View {
     let window: UsageWindow
     var isStale = false
-    var isTightest = false
+    var isMeterWindow = false
     var samples: [UsageSample] = []
 
     var body: some View {
@@ -179,13 +226,13 @@ struct UsageWindowRow: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(window.name)
                     .font(.subheadline.weight(.medium))
-                if isTightest { Image(systemName: "gauge.with.dots.needle.67percent").help("Most-used reported quota window") }
+                if isMeterWindow { Image(systemName: "gauge.with.dots.needle.67percent").help("Shown in the menu bar ring") }
                 Spacer()
                 Text("\(UsageFormatting.percent(window.clampedUsedPercent)) used")
                     .font(.caption.monospacedDigit().weight(.semibold))
             }
             ProgressView(value: window.clampedUsedPercent, total: 100)
-                .tint(progressColor)
+                .tint(usageColor(window.clampedUsedPercent))
                 .accessibilityLabel("\(window.name) usage")
                 .accessibilityValue("\(UsageFormatting.percent(window.clampedUsedPercent)) used, \(UsageFormatting.percent(window.remainingPercent)) remaining")
             HStack {
@@ -226,14 +273,6 @@ struct UsageWindowRow: View {
         .opacity(isStale ? 0.55 : 1)
     }
 
-    private var progressColor: Color {
-        switch window.clampedUsedPercent {
-        case 100...: .red
-        case 90...: .orange
-        case 75...: .yellow
-        default: .indigo
-        }
-    }
 }
 
 struct SettingsView: View {

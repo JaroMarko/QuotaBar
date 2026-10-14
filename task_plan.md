@@ -57,3 +57,14 @@ Local implementation complete; public notarization and manual long-term GUI/slee
 - No Developer ID identities found; public notarization unavailable.
 - CUA cannot select the accessory app; Finder screenshot returned blank. Native icon rendering was inspected, but full interactive GUI and real sleep/wake remain unverified.
 - Packaging emits four platform metadata write warnings; staging and final expanded signature/hash validation pass.
+
+## Compact UX and optimisation (1.2.0)
+- [x] Analyse meter semantics: highest finite reported percentage across all windows initially; user now requires Claude fixed to 5h, Codex unchanged.
+- [x] Compact no-scroll overview with selected ring window visible; details/history in a separate window.
+- [x] Remove duplicated presentation and avoid work for hidden history; consolidate selection logic.
+- [x] Regression/build/live checks plus deterministic light/dark and stale/error popup rendering.
+- [x] Install, commit locally, and update external memory.
+
+Preserve authentication, refresh/backoff, notifications, privacy and cache formats. Avoid broad rewrites or speculative micro-optimisations.
+
+Validated: 53 core checks, store integration, live Claude2/Codex1 windows; native light/dark478pt, stale520pt, 20-window543pt, error611pt, unknown260pt previews. Installed1.2.0 signature and binary match. Interactive CUA accessory-app selection remains unavailable.

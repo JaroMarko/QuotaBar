@@ -66,9 +66,21 @@ public struct UsageSnapshot: Codable, Equatable, Sendable {
 
     public var accountScope: String { accountID ?? account ?? "unknown" }
 
-    public var highestUsedPercent: Double {
-        windows.filter { $0.usedPercent.isFinite }.map(\.clampedUsedPercent).max() ?? 0
+    /// Highest usage across all reported windows, used by refresh policy.
+    public var mostUsedWindow: UsageWindow? {
+        windows.lazy.filter { $0.usedPercent.isFinite }
+            .max { $0.clampedUsedPercent < $1.clampedUsedPercent }
     }
+
+    /// Claude always shows its shared 5-hour session; never substitute weekly.
+    public var meterWindow: UsageWindow? {
+        if provider == .claude {
+            return windows.first { $0.id == "claude-five_hour" && $0.usedPercent.isFinite }
+        }
+        return mostUsedWindow
+    }
+
+    public var highestUsedPercent: Double { mostUsedWindow?.clampedUsedPercent ?? 0 }
 }
 
 public enum ProviderError: LocalizedError, Equatable, Sendable {
@@ -136,7 +148,7 @@ public struct ProviderDisplayState: Identifiable, Sendable {
 
     public func meterValue(at now: Date = Date()) -> Double? {
         guard let snapshot, !hasStaleData(at: now) else { return nil }
-        return snapshot.windows.filter { $0.usedPercent.isFinite }.map(\.clampedUsedPercent).max()
+        return snapshot.meterWindow?.clampedUsedPercent
     }
 }
 

@@ -9,6 +9,7 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
     private var settingsWindow: NSWindow?
+    private var detailWindows: [ProviderKind: NSWindow] = [:]
     private var subscription: AnyCancellable?
     private var timer: Timer?
 
@@ -21,6 +22,10 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate {
         }
         if let index = args.firstIndex(of: "--preview-icons"), args.count > index + 1 {
             SmokeChecks.writeIconPreview(path: args[index + 1]); NSApplication.shared.terminate(nil); return
+        }
+        if let index = args.firstIndex(of: "--preview-popup"), args.count > index + 1 {
+            Task { let passed = await SmokeChecks.writePopupPreview(path: args[index + 1]); exit(passed ? 0 : 1) }
+            return
         }
         let store = UsageStore.shared
         statusItem = NSStatusBar.system.statusItem(withLength: MenuBarIcon.size.width + 4)
@@ -45,7 +50,7 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate {
         let states = UsageStore.shared.orderedStates
         statusItem?.button?.image = MenuBarIcon.image(states: states)
         statusItem?.button?.toolTip = states.map { state in
-            let detail = state.meterValue().map { "\(UsageFormatting.percent($0)) used" } ?? "current usage unavailable"
+            let detail = state.meterValue().map { "\(state.snapshot?.meterWindow?.name ?? "Quota"): \(UsageFormatting.percent($0)) used" } ?? "current usage unavailable"
             return "\(state.provider.displayName): \(detail)"
         }.joined(separator: "\n")
         statusItem?.button?.setAccessibilityLabel("QuotaBar: Claude and Codex quota meters")
@@ -60,6 +65,22 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func showDetails(for provider: ProviderKind) {
+        popover.performClose(nil)
+        if detailWindows[provider] == nil {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 560),
+                styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+            window.minSize = NSSize(width: 410, height: 360)
+            window.title = "\(provider.displayName) usage details"
+            window.isReleasedWhenClosed = false
+            window.contentViewController = NSHostingController(rootView: LiveProviderDetails(store: UsageStore.shared, provider: provider))
+            window.center()
+            detailWindows[provider] = window
+        }
+        detailWindows[provider]?.makeKeyAndOrderFront(nil)
+        NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+
     func showSettings() {
         popover.performClose(nil)
         if settingsWindow == nil {
@@ -71,6 +92,17 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate {
         }
         settingsWindow?.makeKeyAndOrderFront(nil)
         NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+}
+
+private struct LiveProviderDetails: View {
+    @ObservedObject var store: UsageStore
+    let provider: ProviderKind
+
+    var body: some View {
+        if let state = store.states[provider] {
+            ProviderDetailsView(state: state, history: store.history)
+        }
     }
 }
 

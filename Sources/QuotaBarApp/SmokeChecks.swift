@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import QuotaBarCore
+import SwiftUI
 
 // Explicit developer-only commands; fixtures never use provider credentials.
 actor FixtureProvider: UsageProvider {
@@ -16,6 +17,15 @@ actor FixtureProvider: UsageProvider {
         ], fetchedAt: Date(), source: "Fixture", accountID: "fixture-account")
     }
     func callCount() -> Int { calls }
+}
+
+private struct PreviewProvider: UsageProvider {
+    let snapshot: UsageSnapshot
+    var error: ProviderError? = nil
+    var kind: ProviderKind { snapshot.provider }
+    func fetch() async throws -> UsageSnapshot {
+        if let error { throw error }; return snapshot
+    }
 }
 
 @MainActor
@@ -70,6 +80,73 @@ enum SmokeChecks {
         NSApplication.shared.terminate(nil)
     }
 
+    // Offline fixture rendering tests the actual native layout, not a mockup.
+    static func writePopupPreview(path: String) async -> Bool {
+        let now = Date()
+        let name = "QuotaBarPreview.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name) }
+        let snapshots = [ProviderKind.claude, .codex].map { kind in
+            UsageSnapshot(provider: kind, plan: "Pro", windows: [
+                UsageWindow(id: kind == .claude ? "claude-five_hour" : "codex-primary",
+                            name: "5-hour session", usedPercent: 24, resetsAt: now.addingTimeInterval(7200), durationMinutes: 300),
+                UsageWindow(id: kind == .claude ? "claude-seven_day" : "codex-secondary",
+                            name: "Weekly", usedPercent: 82, resetsAt: now.addingTimeInterval(3 * 86400), durationMinutes: 10080)
+            ], fetchedAt: now, source: "Preview", account: "Preview")
+        }
+        for snapshot in snapshots {
+            defaults.set(try? JSONEncoder().encode(snapshot), forKey: "cachedSnapshot.\(snapshot.provider.rawValue)")
+        }
+        let preferences = AppPreferences(defaults: defaults)
+        preferences.notification75 = false; preferences.notification90 = false
+        preferences.notification100 = false; preferences.notificationReset = false
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        func makeStore(_ snapshots: [UsageSnapshot], error: ProviderError? = nil) -> UsageStore {
+            UsageStore(providers: snapshots.map { PreviewProvider(snapshot: $0, error: error) }, preferences: preferences,
+                defaults: defaults, historyPersistence: HistoryPersistence(url: directory.appendingPathComponent("history.json")))
+        }
+        let store = makeStore(snapshots)
+        let base = URL(fileURLWithPath: path).deletingPathExtension().path
+        guard renderPopup(store: store, path: base + "-stale.png", appearance: .aqua) else { return false }
+        await store.refreshAll(force: true)
+        guard renderPopup(store: store, path: path, appearance: .aqua),
+              renderPopup(store: store, path: base + "-dark.png", appearance: .darkAqua) else { return false }
+        let extraSnapshots = snapshots.map { snapshot in
+            UsageSnapshot(provider: snapshot.provider, plan: snapshot.plan, windows: snapshot.windows + (0..<8).map { index in
+                UsageWindow(id: "model-\(index)", name: "Additional model \(index)", usedPercent: Double(90 + index),
+                            resetsAt: now.addingTimeInterval(86400), durationMinutes: 10080)
+            }, fetchedAt: now)
+        }
+        let extraStore = makeStore(extraSnapshots)
+        await extraStore.refreshAll(force: true)
+        guard renderPopup(store: extraStore, path: base + "-extra.png", appearance: .aqua) else { return false }
+        let errorStore = makeStore(snapshots, error: .expiredCredentials("Fixture provider"))
+        await errorStore.refreshAll(force: true)
+        guard renderPopup(store: errorStore, path: base + "-error.png", appearance: .aqua) else { return false }
+        for provider in ProviderKind.allCases { defaults.removeObject(forKey: "cachedSnapshot.\(provider.rawValue)") }
+        return renderPopup(store: makeStore([]), path: base + "-unknown.png", appearance: .aqua)
+    }
+
+    private static func renderPopup(store: UsageStore, path: String, appearance: NSAppearance.Name) -> Bool {
+        let view = NSHostingView(rootView: QuotaBarMenuView(store: store, refreshOnAppear: false)
+            .background(Color(nsColor: .windowBackgroundColor)))
+        view.appearance = NSAppearance(named: appearance)
+        let size = view.fittingSize
+        guard size.width == 410, size.height > 150, size.height <= 620 else {
+            print("FAIL popup fitting size: \(size)"); return false
+        }
+        view.frame = NSRect(origin: .zero, size: size)
+        view.layoutSubtreeIfNeeded()
+        guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return false }
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        guard let png = bitmap.representation(using: .png, properties: [:]) else { return false }
+        do { try png.write(to: URL(fileURLWithPath: path), options: .atomic) }
+        catch { print("FAIL popup preview: \(error)"); return false }
+        print("PASS no-scroll native popup: \(Int(size.width)) × \(Int(size.height))pt, \(URL(fileURLWithPath: path).lastPathComponent)")
+        return true
+    }
+
     static func writeIconPreview(path: String) {
         let now = Date()
         let combinations: [(Double?, Double?)] = [(10,25),(60,85),(100,100),(nil,nil)]
@@ -79,7 +156,7 @@ enum SmokeChecks {
             for (index, values) in combinations.enumerated() {
                 let states = zip([ProviderKind.claude,.codex], [values.0,values.1]).map { kind, used in
                     ProviderDisplayState(provider: kind, snapshot: used.map { value in
-                        UsageSnapshot(provider: kind, plan: nil, windows: [UsageWindow(id: "fixture", name: "Fixture", usedPercent: value,
+                        UsageSnapshot(provider: kind, plan: nil, windows: [UsageWindow(id: kind == .claude ? "claude-five_hour" : "fixture", name: "Fixture", usedPercent: value,
                             resetsAt: now.addingTimeInterval(3600), durationMinutes: 60)], fetchedAt: now)
                     }, errorMessage: nil, isRefreshing: false, isStale: false)
                 }

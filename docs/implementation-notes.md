@@ -34,3 +34,10 @@ Jaro reported the 9pt symbols were illegible. Replaced them with a bold 16x14pt 
 
 ## Claude recognisability (1.1.2)
 Jaro found the custom pixel robot too large and not recognisable as Claude. Replaced it with the actual 24pt Claude spark geometry from the installed official app, rendered at 15pt inside the same quota ring. OpenAI artwork and status-item width are unchanged.
+
+## Compact overview and fixed Claude session (1.2.0)
+- User requires Claude ring fixed to shared five-hour quota; missing/nonfinite session stays unknown, never falls back to weekly. Codex preserves maximum reported usage. Refresh risk continues to consider all windows.
+- Main popover removes scrolling and duplicate headroom/metadata/history. Shared quota rows remain visible; model limits and charts live in separate resizable Details windows. The ring row has a Bar badge; the extra-limit count is explicit.
+- Selection uses lazy single-pass filtering/max and is shared by ring, tooltip and popup. No history filtering/sorting or forecast work in the main overview; usage colours share one helper.
+- Existing provider authentication, retry/429, notifications, persistence formats and stale rules are unchanged. Broad core rewrites and history write batching rejected as unnecessary risk.
+- Native offline previews cover fresh light/dark, stale caches, missing data, provider errors and 20 reported windows. Full native interactive window controls still need unlocked-screen verification if CUA is unavailable.

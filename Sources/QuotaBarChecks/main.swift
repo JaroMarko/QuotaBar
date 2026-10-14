@@ -61,6 +61,29 @@ let highest = UsageSnapshot(
     fetchedAt: Date()
 )
 runner.check(highest.highestUsedPercent == 72, "highest active usage selection")
+runner.check(highest.meterWindow?.id == "weekly", "ring selects usage percentage rather than shortest duration")
+let mixed = UsageSnapshot(provider: .claude, plan: nil, windows: [
+    UsageWindow(id: "invalid", name: "Invalid", usedPercent: .nan, resetsAt: nil, durationMinutes: nil),
+    UsageWindow(id: "claude-five_hour", name: "5-hour session", usedPercent: 80, resetsAt: nil, durationMinutes: 300),
+    UsageWindow(id: "long", name: "Weekly", usedPercent: 25, resetsAt: nil, durationMinutes: 10080)
+], fetchedAt: Date())
+runner.check(mixed.meterWindow?.id == "claude-five_hour", "ring ignores nonfinite values and selects higher short window")
+let weeklyDominates = UsageSnapshot(provider: .claude, plan: nil, windows: [
+    UsageWindow(id: "claude-five_hour", name: "5-hour session", usedPercent: 15, resetsAt: nil, durationMinutes: 300),
+    UsageWindow(id: "claude-seven_day", name: "Weekly", usedPercent: 95, resetsAt: nil, durationMinutes: 10080)
+], fetchedAt: Date())
+runner.check(weeklyDominates.meterWindow?.clampedUsedPercent == 15 && weeklyDominates.highestUsedPercent == 95,
+    "Claude ring is fixed to 5-hour window while refresh still sees weekly risk")
+let claudeWeeklyOnly = UsageSnapshot(provider: .claude, plan: nil, windows: [weeklyDominates.windows[1]], fetchedAt: Date())
+runner.check(claudeWeeklyOnly.meterWindow == nil, "missing Claude session does not substitute weekly")
+let invalidSession = UsageSnapshot(provider: .claude, plan: nil, windows: [
+    UsageWindow(id: "claude-five_hour", name: "Session", usedPercent: .infinity, resetsAt: nil, durationMinutes: 300),
+    weeklyDominates.windows[1]
+], fetchedAt: Date())
+runner.check(invalidSession.meterWindow == nil, "nonfinite Claude session is unavailable")
+let emptySnapshot = UsageSnapshot(provider: .codex, plan: nil, windows: [], fetchedAt: Date())
+runner.check(emptySnapshot.meterWindow == nil && emptySnapshot.highestUsedPercent == 0, "empty snapshot has no ring window")
+
 
 let codexResult: [String: Any] = [
     "rateLimits": [

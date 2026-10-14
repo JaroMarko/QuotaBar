@@ -8,7 +8,7 @@ QuotaBar is a private, local-first macOS menu-bar app for Claude/Claude Code and
 - Codex CLI signed in with ChatGPT
 - Claude Code signed in with `claude auth login`
 
-QuotaBar never stores or logs provider credentials. It reads the existing CLI sessions only during refresh and stores only preferences plus the last successful usage snapshot.
+QuotaBar never stores or logs provider credentials. It reads the existing CLI sessions only during refresh and stores preferences, the last successful usage snapshot, notification deduplication and bounded local usage history.
 
 ## Build and check
 
@@ -28,8 +28,8 @@ The app build uses the native SwiftPM build system and macOS 26.5 SDK when avail
 
 ## Monitoring and privacy
 
-- Menu bar: graphical Claude spark and official OpenAI Blossom for Codex, inside consumed-quota rings, no text. The most-used reported window is displayed; dotted rings mean current data is unavailable/stale.
-- Menu: all returned windows, exact reset time, measurement timestamp and data source. Claude's usage endpoint does not supply confirmed account identity; its history is scoped to an opaque session fingerprint. Token renewal starts a new scope.
+- Menu bar: graphical Claude spark and official OpenAI Blossom for Codex, inside consumed-quota rings, no text. Claude displays the shared 5-hour session; Codex displays its most-used reported window. Dotted rings mean current data is unavailable/stale, including a missing Claude 5h value.
+- Popup: compact shared quota rows, used percentages and reset countdowns without scrolling. A Bar badge marks the ring window. Additional model windows, history, forecast, exact resets and source/account diagnostics are available in separate resizable Details windows. Claude's usage endpoint does not supply confirmed account identity; its history is scoped to an opaque session fingerprint. Token renewal starts a new scope.
 - Refresh: 1 minute while usage changes, usage is high or reset is near; 5 minutes when quiet. Errors back off to 15 minutes, and 429 responses enforce a 10-minute cooldown even for manual refresh.
 - Quota history: local `~/Library/Application Support/QuotaBar/history.json`, limited to 30 days and 10,000 samples. No prompts/transcripts are read. Clear it from the menu's trash button.
 - Forecasts need >=3 recent monotonic samples spanning >=10 minutes in the same account/window/reset cycle. They are estimates and disappear when their assumptions fail.
@@ -37,6 +37,6 @@ The app build uses the native SwiftPM build system and macOS 26.5 SDK when avail
 
 ## Verification
 
-Run `scripts/verify.sh`; live checks are optional via `scripts/verify.sh --live` and reuse existing provider logins. App smoke commands: `QuotaBar --verify-store`, `QuotaBar --preview-icons /absolute/output.png`, and `QuotaBar --smoke-report /absolute/report.json`. Smoke reports omit account identifiers and credentials.
+Run `scripts/verify.sh`; live checks are optional via `scripts/verify.sh --live` and reuse existing provider logins. App smoke commands: `QuotaBar --verify-store`, `QuotaBar --preview-icons /absolute/output.png`, `QuotaBar --preview-popup /absolute/output.png`, and `QuotaBar --smoke-report /absolute/report.json`. Smoke reports omit account identifiers and credentials.
 
 Local builds use an ad-hoc signature. Public distribution still requires Developer ID signing and notarization; a successful local build is not a notarized release.
