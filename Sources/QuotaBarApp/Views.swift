@@ -162,7 +162,7 @@ struct ProviderCard: View {
         return extra > 0 ? "Details (+\(extra))" : "Details"
     }
 
-    private var accent: Color { state.provider == .claude ? .orange : .indigo }
+    private var accent: Color { Color(nsColor: MenuBarIcon.providerColour(state.provider)) }
 }
 
 private struct InactiveProviderNotice: View {

@@ -24,11 +24,11 @@ enum MenuBarMode: String, CaseIterable, Identifiable {
     }
     var explanation: String {
         switch self {
-        case .concentric: "Used quota: outer ring Claude 5h; inner ring Codex most-used window."
+        case .concentric: "Used quota: outer terracotta ring Claude 5h; inner indigo ring Codex most-used window."
         case .claude: "Menu bar shows used quota: Claude 5-hour session."
         case .codex: "Menu bar shows used quota: Codex most-used window."
         case .iconOnly: "Menu bar shows the QuotaBar icon; quota details are shown in this popup."
-        case .semicircles: "Used quota: left half Claude 5h; right half Codex most-used window."
+        case .semicircles: "Used quota: left terracotta half Claude 5h; right indigo half Codex most-used window."
         }
     }
 }

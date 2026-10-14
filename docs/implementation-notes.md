@@ -65,3 +65,6 @@ Both providers monitor current-user native CLI/desktop activity independently. C
 
 ## Curved label rollback (1.3.4)
 User rejected curved provider names as unreadable and miscentred. Restore plain semicircles with centred Q and the original24×24pt canvas/28pt status item for all modes. Reverts6f5e827 while retaining activity gating,429 cooldown,notification preview and other existing behaviour. Future differentiation remains undecided.
+
+## Provider colours (1.3.5)
+User approved trying provider colours in both combined modes. Claude uses terracotta #D97757 (outer concentric ring / left semicircle); Codex uses indigo #6366F1 (inner / right). These indicate provider identity at every usage level. Unused tracks remain neutral and unavailable quotas dotted. Combined images render in colour with an appearance-adaptive Q/track, refreshed when the status button appearance changes. Provider-only/icon-only modes and both-inactive fallback retain system template rendering. Provider card accents and mode explanation/tooltip match the rings. Canvas24pt/status item28pt remain unchanged. Native light/dark previews, menu appearance/fallback checks and the existing regression suite passed.

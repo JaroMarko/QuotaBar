@@ -88,7 +88,7 @@ enum SmokeChecks {
             preferences.menuBarMode = mode
             guard AppPreferences(defaults: defaults).menuBarMode == mode,
                   MenuBarIcon.image(states: [], mode: mode).size == NSSize(width: 24, height: 24),
-                  MenuBarIcon.image(states: [], mode: mode).isTemplate else { return false }
+                  MenuBarIcon.image(states: [], mode: mode).isTemplate == (mode != .concentric && mode != .semicircles) else { return false }
         }
         defaults.set("invalid-future-mode", forKey: "menuBarMode")
         guard AppPreferences(defaults: defaults).menuBarMode == .concentric,
@@ -104,8 +104,8 @@ enum SmokeChecks {
                     errorMessage: nil, isRefreshing: false, isStale: false)
             }
         }
-        func pixels(_ mode: MenuBarMode, _ states: [ProviderDisplayState]) -> Data? {
-            guard let tiff = MenuBarIcon.image(states: states, mode: mode, now: now).tiffRepresentation,
+        func pixels(_ mode: MenuBarMode, _ states: [ProviderDisplayState], appearance: NSAppearance.Name = .aqua) -> Data? {
+            guard let tiff = MenuBarIcon.image(states: states, mode: mode, now: now, appearance: NSAppearance(named: appearance)).tiffRepresentation,
                   let bitmap = NSBitmapImageRep(data: tiff) else { return nil }
             return bitmap.representation(using: .png, properties: [:])
         }
@@ -119,13 +119,21 @@ enum SmokeChecks {
               pixels(.claude, first) != pixels(.claude, []),
               pixels(.codex, first) != pixels(.codex, []) else { return false }
 
+        // Colour images must adapt their central glyph/track, while inactive modes remain system templates.
+        for mode in [MenuBarMode.concentric, .semicircles] {
+            guard pixels(mode, first, appearance: .aqua) != pixels(mode, first, appearance: .darkAqua) else { return false }
+            var inactive = first
+            for index in inactive.indices { inactive[index].isInactive = true }
+            guard MenuBarIcon.image(states: inactive, mode: mode).isTemplate else { return false }
+        }
+
         let store = UsageStore(providers: [], defaults: defaults, activityProbe: { _ in true })
         let controller = NSHostingController(rootView: QuotaBarMenuView(store: store, refreshOnAppear: false))
         controller.sizingOptions = [.preferredContentSize]
         controller.view.layoutSubtreeIfNeeded()
         let size = controller.view.fittingSize
         guard size.width == 410, size.height > 150, size.height < 350 else { return false }
-        print("PASS menu: hosted size \(size), centred anchor, left/right/control click routing, Quit target, test notification payload, five persisted 24pt modes")
+        print("PASS menu: hosted size \(size), centred anchor, left/right/control click routing, Quit target, test notification payload, five persisted 24pt modes, light/dark combined rings, inactive template fallback")
         return true
     }
 
@@ -329,12 +337,16 @@ enum SmokeChecks {
         let combinations: [(Double?, Double?)] = [(10,25),(60,85),(100,100),(nil,nil)]
         let modes = MenuBarMode.allCases
         print("Provider artwork loaded: Claude \(MenuBarIcon.hasClaudeArtwork), OpenAI \(MenuBarIcon.hasOpenAIArtwork)")
+        for dark in [false, true] {
+        let appearance = NSAppearance(named: dark ? .darkAqua : .aqua)!
+        let labelColour = dark ? NSColor.white : NSColor.black
         let image = NSImage(size: NSSize(width: 720, height: 320), flipped: false) { _ in
-            NSColor.white.setFill(); NSBezierPath(rect: NSRect(x: 0, y: 0, width: 720, height: 320)).fill()
+            (dark ? NSColor(white: 0.12, alpha: 1) : NSColor.white).setFill()
+            NSBezierPath(rect: NSRect(x: 0, y: 0, width: 720, height: 320)).fill()
             let labels = ["Concentric", "Claude", "Codex", "Icon only", "Semicircles"]
             for (index, label) in labels.enumerated() {
                 (label as NSString).draw(at: NSPoint(x: 130 + index * 116, y: 290),
-                    withAttributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.black])
+                    withAttributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: labelColour])
             }
             for (row, values) in combinations.enumerated() {
                 let states = zip([ProviderKind.claude,.codex], [values.0,values.1]).map { kind, used in
@@ -346,18 +358,31 @@ enum SmokeChecks {
                 let y = CGFloat(224 - row * 65)
                 let label = values.0 == nil ? "Unavailable" : "\(Int(values.0!)) / \(Int(values.1!))% used"
                 (label as NSString).draw(at: NSPoint(x: 8, y: y + 12),
-                    withAttributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: NSColor.black])
+                    withAttributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: labelColour])
                 for (column, mode) in modes.enumerated() {
-                    let icon = MenuBarIcon.image(states: states, mode: mode, now: now)
+                    let icon = MenuBarIcon.image(states: states, mode: mode, now: now, appearance: appearance)
                     let x = CGFloat(130 + column * 116)
-                    icon.draw(in: NSRect(x: x, y: y + 12, width: 24, height: 24))
-                    icon.draw(in: NSRect(x: x + 32, y: y, width: 48, height: 48))
+                    // Single-provider/template modes are tinted by macOS; emulate that in the dark preview.
+                    if icon.isTemplate && dark {
+                        let tinted = NSImage(size: icon.size)
+                        tinted.lockFocus()
+                        NSColor.white.setFill(); NSBezierPath(rect: NSRect(origin: .zero, size: icon.size)).fill()
+                        icon.draw(in: NSRect(origin: .zero, size: icon.size), from: .zero, operation: .destinationIn, fraction: 1)
+                        tinted.unlockFocus()
+                        tinted.draw(in: NSRect(x: x, y: y + 12, width: 24, height: 24))
+                        tinted.draw(in: NSRect(x: x + 32, y: y, width: 48, height: 48))
+                    } else {
+                        icon.draw(in: NSRect(x: x, y: y + 12, width: 24, height: 24))
+                        icon.draw(in: NSRect(x: x + 32, y: y, width: 48, height: 48))
+                    }
                 }
             }
             return true
         }
         guard let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff),
               let png = bitmap.representation(using: .png, properties: [:]) else { return }
-        try? png.write(to: URL(fileURLWithPath: path), options: .atomic)
+        let destination = dark ? URL(fileURLWithPath: path).deletingPathExtension().path + "-dark.png" : path
+        try? png.write(to: URL(fileURLWithPath: destination), options: .atomic)
+        }
     }
 }

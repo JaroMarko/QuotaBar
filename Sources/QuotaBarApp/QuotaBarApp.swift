@@ -14,6 +14,7 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
     private var detailWindows: [ProviderKind: NSWindow] = [:]
     private var subscription: AnyCancellable?
     private var preferencesSubscription: AnyCancellable?
+    private var appearanceObservation: NSKeyValueObservation?
     private var timer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -51,6 +52,9 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
         preferencesSubscription = store.preferences.objectWillChange.sink { [weak self] in
             DispatchQueue.main.async { self?.updateIcon() }
         }
+        appearanceObservation = statusItem?.button?.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
+            Task { @MainActor in self?.updateIcon() }
+        }
         timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.updateIcon() }
         }
@@ -69,8 +73,9 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
 
     private func updateIcon() {
         let states = UsageStore.shared.orderedStates
-        statusItem?.button?.image = MenuBarIcon.image(states: states, mode: UsageStore.shared.preferences.menuBarMode)
-        statusItem?.button?.toolTip = states.map { state in
+        statusItem?.button?.image = MenuBarIcon.image(states: states, mode: UsageStore.shared.preferences.menuBarMode, appearance: statusItem?.button?.effectiveAppearance)
+        let mode = UsageStore.shared.preferences.menuBarMode
+        statusItem?.button?.toolTip = mode.explanation + "\n" + states.map { state in
             if state.isInactive { return "\(state.provider.displayName): Vypnutá" }
             let detail = state.meterValue().map { "\(state.snapshot?.meterWindow?.name ?? "Quota"): \(UsageFormatting.percent($0)) used" } ?? "current usage unavailable"
             return "\(state.provider.displayName): \(detail)"
