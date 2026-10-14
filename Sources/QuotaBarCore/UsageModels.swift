@@ -93,9 +93,12 @@ public enum ProviderError: LocalizedError, Equatable, Sendable {
     case networkUnavailable(String)
     case accessDenied(String)
     case expiredCredentials(String)
+    case localBridgeUnavailable(String)
 
     public var recoveryExplanation: String {
         switch self {
+        case .localBridgeUnavailable:
+            "Open a local Claude Code session with the QuotaBar mod enabled and send a message. Usage is updated after Claude Code receives a response. Ordinary Claude Chat does not provide this local usage source; QuotaBar does not make OAuth usage requests."
         case .rateLimited:
             "The provider temporarily rejected requests to read usage (HTTP 429). This does not by itself mean your subscription quota is exhausted. QuotaBar pauses checks for 10 minutes, then retries automatically. The provider may continue limiting requests after that. Shown percentages are last known values. Refresh and restarting QuotaBar do not bypass this pause."
         case .networkUnavailable:
@@ -133,7 +136,7 @@ public enum ProviderError: LocalizedError, Equatable, Sendable {
             "\(name): access denied. Check Keychain permissions and your plan."
         case let .expiredCredentials(name):
             "\(name): login expired. Sign in again with the official CLI."
-        case let .unavailable(message):
+        case let .unavailable(message), let .localBridgeUnavailable(message):
             message
         }
     }
@@ -141,7 +144,12 @@ public enum ProviderError: LocalizedError, Equatable, Sendable {
 
 public protocol UsageProvider: Sendable {
     var kind: ProviderKind { get }
+    var requiresNetwork: Bool { get }
     func fetch() async throws -> UsageSnapshot
+}
+
+public extension UsageProvider {
+    var requiresNetwork: Bool { true }
 }
 
 public struct ProviderDisplayState: Identifiable, Sendable {

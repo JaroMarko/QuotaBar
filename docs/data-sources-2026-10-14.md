@@ -1,6 +1,16 @@
-# QuotaBar: zdroje kvót (overené 2026-10-14)
+# QuotaBar: zdroje kvót (overené2026-10-14)
 
-## Súčasná implementácia
+## Aktuálna implementácia1.4.0
+
+Claude: lokálny mod číta oficiálne `$.session.usage()` a zapisuje iba `rateLimits` (kind,percentUsed,resetsAt) a capturedAt. QuotaBar číta súbor každých20s; nepoužíva Claude OAuth/Keychain ani usageHTTP. Hook `session.measure` reaguje po turne a pri zmene planusage; `/quotabar-sync` je lokálny command bez LLM. Desktop embeddedCode2.1.295 aj CLI2.1.299 overené; obe plugin validation/test prešli. Chat/Cowork-only nie sú zdrojom. Cloud/SSH mod beží na vzdialenom stroji,kde miestny /Applications/QuotaBar.app nie je prítomný. Meranie po10min bez update je stale; resetané okno sa skryje,nie0%. Account identity API neposkytuje,preto Claudeautoalerts/forecast withheld; prvý údaj pri migrácii nevytvorí falošný reset.
+
+Primárne docs: [Mods overview](https://code.claude.com/docs/en/plugins/mods/overview), [session.usage a session.measure](https://code.claude.com/docs/en/plugins/mods/reference), [Create/validate a mod](https://code.claude.com/docs/en/plugins/mods/create).
+
+Codex ostáva lokálny app-server s account/read refreshToken:false a account/rateLimits/read,adaptive refresh60–300s a chybovépauzy. [OpenAI App Server](https://learn.chatgpt.com/docs/app-server#6-rate-limits-chatgpt).
+
+## Historické preverenie pred1.4.0
+
+### Pôvodná implementácia
 
 Codex: lokálny `codex app-server --stdio`, handshake initialize/initialized, potom account/read s refreshToken:false a account/rateLimits/read. Číta JSON percentá, dĺžku okna a reset; negeneruje modelové odpovede. Zdroj: [OpenAI App Server](https://learn.chatgpt.com/docs/app-server#6-rate-limits-chatgpt).
 

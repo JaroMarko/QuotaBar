@@ -45,6 +45,31 @@ private actor ActivityFixtureProvider: UsageProvider {
     func resume() { waiter?.resume(); waiter = nil }
 }
 
+private actor LocalUsageFixtureProvider: UsageProvider {
+    nonisolated let kind = ProviderKind.claude
+    nonisolated let requiresNetwork = false
+    private var snapshot: UsageSnapshot
+    private var calls = 0
+    private var unavailable = false
+    init(capturedAt: Date) {
+        snapshot = Self.measurement(at: capturedAt)
+    }
+    private static func measurement(at capturedAt: Date) -> UsageSnapshot {
+        UsageSnapshot(provider: .claude, plan: nil, windows: [
+            UsageWindow(id: "claude-five_hour", name: "5h", usedPercent: 42,
+                resetsAt: capturedAt.addingTimeInterval(18000), durationMinutes: 300)
+        ], fetchedAt: capturedAt, source: ClaudeSessionUsageProvider.sourceName)
+    }
+    func fetch() async throws -> UsageSnapshot {
+        calls += 1
+        if unavailable { throw ProviderError.localBridgeUnavailable("Fixture has no recent local capture.") }
+        return snapshot
+    }
+    func capture(at date: Date) { snapshot = Self.measurement(at: date) }
+    func fail() { unavailable = true }
+    func callCount() -> Int { calls }
+}
+
 private struct PreviewProvider: UsageProvider {
     let snapshot: UsageSnapshot
     var error: ProviderError? = nil
@@ -169,8 +194,55 @@ enum SmokeChecks {
         guard let loaded = try? await persistence.load(), loaded.samples.count == 2 else { return false }
         await store.clearHistory()
         guard store.history.samples.isEmpty, (try? await persistence.load())?.samples.isEmpty == true else { return false }
-        guard await verifyActivity() else { return false }
+        guard await verifyActivity(), await verifyLocalUsage() else { return false }
         print("PASS store: stale retention, retry scheduling, manual recovery, 429 cooldown across restart, error help, history persistence/clear")
+        return true
+    }
+
+    private static func verifyLocalUsage() async -> Bool {
+        let name = "QuotaBarLocalChecks.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name) }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let capturedAt = Date().addingTimeInterval(-30)
+        let old = UsageSnapshot(provider: .claude, plan: nil, windows: [], fetchedAt: Date(), source: "Claude OAuth usage")
+        defaults.set(try? JSONEncoder().encode(old), forKey: "cachedSnapshot.claude")
+        defaults.set(Date().addingTimeInterval(600), forKey: "rateLimitedUntil.claude")
+        let provider = LocalUsageFixtureProvider(capturedAt: capturedAt)
+        let codex = ActivityFixtureProvider(.codex)
+        let preferences = AppPreferences(defaults: defaults)
+        preferences.notification75 = false; preferences.notification90 = false
+        preferences.notification100 = false; preferences.notificationReset = false
+        let store = UsageStore(providers: [provider, codex], preferences: preferences, defaults: defaults,
+            historyPersistence: HistoryPersistence(url: directory.appendingPathComponent("history.json")),
+            networkAvailable: false, activityProbe: { _ in true })
+        guard store.states[.claude]?.snapshot == nil,
+              defaults.object(forKey: "rateLimitedUntil.claude") == nil else { return false }
+        await store.refreshAll(force: true)
+        guard await provider.callCount() == 1, await codex.callCount() == 0,
+              store.states[.claude]?.snapshot?.fetchedAt == capturedAt,
+              store.states[.claude]?.errorMessage == nil,
+              store.states[.codex]?.errorMessage?.contains("Offline") == true,
+              store.history.samples.isEmpty else { return false } // no alerts/history on source migration
+        await store.refreshAll(force: true)
+        guard store.history.samples.isEmpty, store.states[.claude]?.snapshot?.fetchedAt == capturedAt else { return false }
+        let newer = capturedAt.addingTimeInterval(1)
+        await provider.capture(at: newer)
+        await store.refreshAll(force: true)
+        guard store.history.samples.count == 1, store.history.samples.first?.measuredAt == newer,
+              store.history.samples.first?.accountScope == "unknown" else { return false }
+        await store.refreshAll(force: true)
+        guard store.history.samples.count == 1 else { return false }
+        await provider.capture(at: capturedAt)
+        await store.refreshAll(force: true)
+        guard store.states[.claude]?.snapshot?.fetchedAt == newer, store.history.samples.count == 1 else { return false }
+        await provider.fail()
+        await store.refreshAll(force: true)
+        guard store.states[.claude]?.isStale == true,
+              store.nextRefreshAt[.claude]?.timeIntervalSinceNow ?? 0 <= 20,
+              store.states[.claude]?.snapshot?.fetchedAt == newer else { return false }
+        print("PASS local Claude store: offline read, 429 migration, capture age, duplicate suppression, older capture rejection, 20s retry")
         return true
     }
 

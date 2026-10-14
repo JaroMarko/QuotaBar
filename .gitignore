@@ -4,3 +4,5 @@
 .swiftpm-security/
 dist/
 .DS_Store
+
+.build/

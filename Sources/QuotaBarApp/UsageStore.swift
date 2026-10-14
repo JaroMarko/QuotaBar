@@ -32,12 +32,14 @@ final class UsageStore: ObservableObject {
     private var ledger: AlertLedger
     private let activityProbe: @MainActor (ProviderKind) -> Bool?
     private var presence: [ProviderKind: Bool] = [:]
+    private var pendingSourceMigration: Set<ProviderKind> = []
 
-    init(providers: [any UsageProvider] = [ClaudeUsageProvider(), CodexUsageProvider()],
+    init(providers: [any UsageProvider] = [ClaudeSessionUsageProvider(), CodexUsageProvider()],
          preferences: AppPreferences? = nil, defaults: UserDefaults = .standard,
-         historyPersistence: HistoryPersistence = HistoryPersistence(),
+         historyPersistence: HistoryPersistence = HistoryPersistence(), networkAvailable: Bool = true,
          activityProbe: @escaping @MainActor (ProviderKind) -> Bool? = { ProviderActivityProbe.isRunning($0) }) {
         self.providers = providers
+        self.networkAvailable = networkAvailable
         self.activityProbe = activityProbe
         self.defaults = defaults
         self.historyPersistence = historyPersistence
@@ -45,15 +47,27 @@ final class UsageStore: ObservableObject {
         if let data = defaults.data(forKey: "alertLedger"),
            let saved = try? JSONDecoder().decode(AlertLedger.self, from: data) { ledger = saved }
         else { ledger = AlertLedger() }
+        for provider in providers where !provider.requiresNetwork {
+            if let cached = Self.loadCachedSnapshot(for: provider.kind, defaults: defaults),
+               cached.source != ClaudeSessionUsageProvider.sourceName {
+                pendingSourceMigration.insert(provider.kind)
+            }
+        }
         states = Dictionary(uniqueKeysWithValues: ProviderKind.allCases.map { kind in
-            let cached = Self.loadCachedSnapshot(for: kind, defaults: defaults)
+            var cached = Self.loadCachedSnapshot(for: kind, defaults: defaults)
+            if kind == .claude, providers.contains(where: { $0.kind == kind && !$0.requiresNetwork }),
+               cached?.source != ClaudeSessionUsageProvider.sourceName {
+                cached = nil
+                defaults.removeObject(forKey: "cachedSnapshot.\(kind.rawValue)")
+            }
             return (kind, ProviderDisplayState(provider: kind, snapshot: cached,
                 errorMessage: nil, isRefreshing: false, isStale: cached != nil))
         })
         // Keep the server-error pause across app updates/restarts as well.
         for kind in ProviderKind.allCases {
             let key = "rateLimitedUntil.\(kind.rawValue)"
-            if let until = defaults.object(forKey: key) as? Date,
+            if providers.contains(where: { $0.kind == kind && $0.requiresNetwork }),
+               let until = defaults.object(forKey: key) as? Date,
                until > Date(), until.timeIntervalSinceNow <= 600 {
                 rateLimitedUntil[kind] = until
                 nextRefreshAt[kind] = until
@@ -129,7 +143,8 @@ final class UsageStore: ObservableObject {
                 let recovered = !self.networkAvailable && path.status == .satisfied
                 self.networkAvailable = path.status == .satisfied
                 if !self.networkAvailable {
-                    for kind in ProviderKind.allCases where self.states[kind]?.isInactive != true {
+                    for provider in self.providers where provider.requiresNetwork && self.states[provider.kind]?.isInactive != true {
+                        let kind = provider.kind
                         self.states[kind]?.isStale = self.states[kind]?.snapshot != nil
                         self.states[kind]?.errorMessage = "Offline — waiting for the network"
                         self.states[kind]?.errorHelp = ProviderError.networkUnavailable(kind.displayName).recoveryExplanation
@@ -165,19 +180,20 @@ final class UsageStore: ObservableObject {
         guard !sleeping else { return }
         if isRefreshing { pendingRefresh = pendingRefresh || force; return }
         let now = Date()
-        let selected = providers.filter { provider in
+        var selected = providers.filter { provider in
             if presence[provider.kind] != true { return false }
             if let until = rateLimitedUntil[provider.kind], until > now { return false }
             return force || (nextRefreshAt[provider.kind] ?? .distantPast) <= now
         }
         guard !selected.isEmpty else { return }
         if !networkAvailable {
-            for provider in selected {
+            for provider in selected where provider.requiresNetwork {
                 states[provider.kind]?.isStale = states[provider.kind]?.snapshot != nil
                 states[provider.kind]?.errorMessage = "Offline — waiting for the network"
                 states[provider.kind]?.errorHelp = ProviderError.networkUnavailable(provider.kind.displayName).recoveryExplanation
             }
-            return
+            selected.removeAll(where: { $0.requiresNetwork })
+            guard !selected.isEmpty else { return }
         }
         isRefreshing = true
         defer {
@@ -201,21 +217,32 @@ final class UsageStore: ObservableObject {
                 let inactive = presence[kind] == false
                 let unverified = presence[kind] == nil
                 let previous = states[kind]?.snapshot
+                let local = providers.first(where: { $0.kind == kind })?.requiresNetwork == false
                 switch result {
                 case let .success(snapshot):
+                    // Parallel sessions can write the cache while a refresh is pending.
+                    // Never let an older capture overwrite a newer measurement.
+                    if local, let previous, snapshot.fetchedAt < previous.fetchedAt {
+                        states[kind]?.isRefreshing = false
+                        nextRefreshAt[kind] = Date().addingTimeInterval(20)
+                        continue
+                    }
+                    let newCapture = previous?.fetchedAt != snapshot.fetchedAt
+                    let migrated = pendingSourceMigration.remove(kind) != nil
                     states[kind] = ProviderDisplayState(provider: kind, snapshot: snapshot,
                         errorMessage: nil, isRefreshing: false, isStale: inactive || unverified, isInactive: inactive)
                     failures[kind] = 0; rateLimitedUntil[kind] = nil
                     defaults.removeObject(forKey: "rateLimitedUntil.\(kind.rawValue)")
-                    nextRefreshAt[kind] = Date().addingTimeInterval(RefreshPolicy.interval(previous: previous, current: snapshot, now: Date()))
+                    nextRefreshAt[kind] = Date().addingTimeInterval(local ? 20 : RefreshPolicy.interval(previous: previous, current: snapshot, now: Date()))
                     Self.cache(snapshot, defaults: defaults)
+                    guard newCapture && !migrated else { continue }
                     history.append(snapshot)
                     if historyWritable {
                         do { try await historyPersistence.save(history); historyError = nil }
                         catch { historyError = "Local history could not be saved." }
                     }
                     synchronizeActivity()
-                    if presence[kind] != true { continue }
+                    if presence[kind] != true || (local && snapshot.accountScope == "unknown") { continue }
                     let alerts = ledger.take(previous: previous, current: snapshot,
                         thresholds: preferences.enabledThresholds, resetEnabled: preferences.notificationReset)
                     if let data = try? JSONEncoder().encode(ledger) { defaults.set(data, forKey: "alertLedger") }
@@ -226,9 +253,9 @@ final class UsageStore: ObservableObject {
                     }
                 case let .failure(error):
                     failures[kind, default: 0] += 1
-                    let delay = RefreshPolicy.retryInterval(failures: failures[kind] ?? 1, error: error as? ProviderError)
+                    let delay = local ? 20 : RefreshPolicy.retryInterval(failures: failures[kind] ?? 1, error: error as? ProviderError)
                     nextRefreshAt[kind] = Date().addingTimeInterval(delay)
-                    if case ProviderError.rateLimited = error {
+                    if !local, case ProviderError.rateLimited = error {
                         rateLimitedUntil[kind] = nextRefreshAt[kind]
                         defaults.set(nextRefreshAt[kind], forKey: "rateLimitedUntil.\(kind.rawValue)")
                     }

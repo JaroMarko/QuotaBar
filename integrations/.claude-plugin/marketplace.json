@@ -1,0 +1,13 @@
+{
+  "name": "quotabar-local",
+  "owner": {
+    "name": "Jaroslav Marko"
+  },
+  "plugins": [
+    {
+      "name": "quotabar-usage",
+      "source": "./claude-quotabar",
+      "description": "Local Claude Code usage bridge"
+    }
+  ]
+}

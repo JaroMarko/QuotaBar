@@ -1,0 +1,6 @@
+{
+  "description": "Local quota measurements only",
+  "modules": [
+    "./register.js"
+  ]
+}

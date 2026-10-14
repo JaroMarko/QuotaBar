@@ -171,7 +171,7 @@ private struct InactiveProviderNotice: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Label("Vypnutá", systemImage: "power").font(.subheadline.weight(.medium))
-            Text(provider == .claude ? "Spusti Claude alebo Claude Code a sledovanie sa obnoví." : "Spusti Codex alebo ChatGPT a sledovanie sa obnoví.")
+            Text(provider == .claude ? "Spusti lokálnu kartu Code v Claude alebo Claude Code s QuotaBar rozšírením." : "Spusti Codex alebo ChatGPT a sledovanie sa obnoví.")
                 .font(.caption2)
         }.foregroundStyle(.secondary)
     }
@@ -383,7 +383,7 @@ struct SettingsView: View {
             }
             Section("General") {
                 Toggle("Launch QuotaBar at login", isOn: $preferences.launchAtLogin)
-                Text("Adaptive refresh: every 1–5 minutes, on wake and network recovery. Errors slow retries.")
+                Text("Claude: reads local measurements every 20 seconds. Codex: adaptive checks every 1–5 minutes.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if let error = preferences.launchAtLoginError {
@@ -391,6 +391,7 @@ struct SettingsView: View {
                 }
             }
             Section("Notifications") {
+                Text("Claude automatic alerts require account identity, which this local source does not provide. Codex alerts and the notification preview remain available.").font(.caption).foregroundStyle(.secondary)
                 Toggle("At 75% used", isOn: $preferences.notification75)
                 Toggle("At 90% used", isOn: $preferences.notification90)
                 Toggle("At 100% used", isOn: $preferences.notification100)
@@ -409,14 +410,14 @@ struct SettingsView: View {
                 }
             }
             Section("Privacy") {
-                Text("QuotaBar reads existing Codex and Claude Code sessions only when refreshing. Credentials are never stored or logged. No analytics or telemetry are collected.")
+                Text("Claude limits arrive locally from the Claude Code session.usage bridge; no Claude credentials or HTTP quota requests. Codex uses its existing CLI login. No analytics or telemetry.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
         .padding(8)
-        .frame(width: 460, height: 600)
+        .frame(width: 460, height: 650)
     }
 }
 

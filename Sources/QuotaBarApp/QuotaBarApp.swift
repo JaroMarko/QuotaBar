@@ -175,6 +175,13 @@ private struct LiveProviderDetails: View {
 @MainActor
 enum QuotaBarMain {
     static func main() {
+        // The mod's writer is a headless command: no GUI, providers, Keychain or network startup.
+        if let index = CommandLine.arguments.firstIndex(of: "--capture-claude-usage") {
+            guard CommandLine.arguments.count == index + 2,
+                  let data = CommandLine.arguments[index + 1].data(using: .utf8) else { exit(1) }
+            do { try ClaudeSessionUsageProvider.capture(data: data); exit(0) }
+            catch { fputs("Local Claude quota capture failed.\n", stderr); exit(1) }
+        }
         let app = NSApplication.shared
         let delegate = QuotaBarDelegate()
         app.delegate = delegate

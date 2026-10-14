@@ -1,0 +1,8 @@
+{
+  "name": "quotabar-usage",
+  "version": "1.0.1",
+  "description": "Exports Claude Code plan usage locally to QuotaBar, without HTTP or credentials.",
+  "author": {
+    "name": "Jaroslav Marko"
+  }
+}

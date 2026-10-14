@@ -139,13 +139,6 @@ do {
     runner.check(false, "Claude valid response decoding")
 }
 
-let credentialJSON = #"{"claudeAiOauth":{"accessToken":"test-token","subscriptionType":"pro"}}"#.data(using: .utf8)!
-do {
-    let credential = try ClaudeCredentialLoader.decodeCredential(credentialJSON)
-    runner.check(credential.accessToken == "test-token" && credential.planHint == "Pro", "Claude credential schema decoding")
-} catch {
-    runner.check(false, "Claude credential schema decoding")
-}
 runner.checkThrows("Claude malformed response rejection") {
     _ = try ClaudeUsageDecoder.decode(Data("{}".utf8), planHint: nil, now: Date())
 }
@@ -254,6 +247,71 @@ runner.checkThrows("reject oversized subprocess input before launch") {
 let noReset = UsageWindow(id: "session", name: "Session", usedPercent: 40, resetsAt: nil, durationMinutes: 60)
 runner.check(history.series(for: latest, window: noReset).isEmpty, "unknown reset does not join history cycles")
 
+// Local session bridge never reads OAuth or stores unrecognized payload fields.
+let bridgeDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("QuotaBarBridgeChecks-\(UUID().uuidString)")
+let bridgeURL = bridgeDirectory.appendingPathComponent("usage.json")
+func bridgeData(captured: Double = 2_000_000_000, percent: Double = 24, reset: Double = 2_000_001_000) throws -> Data {
+    try JSONSerialization.data(withJSONObject: ["version": 1, "capturedAt": captured,
+        "rateLimits": [["kind": "five_hour", "percentUsed": percent, "resetsAt": reset],
+                       ["kind": "seven_day", "percentUsed": 65, "resetsAt": 2_000_010_000]],
+        "sessionID": "private-session", "prompt": "private-prompt", "accessToken": "private-token"])
+}
+runner.check(!ClaudeSessionUsageProvider().requiresNetwork && CodexUsageProvider().requiresNetwork,
+             "local Claude bridge does not require network")
+runner.checkThrows("missing local bridge is unavailable") { _ = try ClaudeSessionUsageProvider.load(url: bridgeURL, now: measuredAt) }
+do {
+    try ClaudeSessionUsageProvider.capture(data: bridgeData(), url: bridgeURL, now: measuredAt)
+    let local = try ClaudeSessionUsageProvider.load(url: bridgeURL, now: measuredAt.addingTimeInterval(20))
+    runner.check(local.meterWindow?.usedPercent == 24 && local.windows.count == 2, "local bridge decodes reported quotas")
+    runner.check(local.fetchedAt == measuredAt && local.source == ClaudeSessionUsageProvider.sourceName,
+                 "reading local cache preserves measurement time and source")
+    runner.check(local.account == nil && local.accountID == nil, "local session ID is not account identity")
+    let saved = try Data(contentsOf: bridgeURL)
+    let text = String(decoding: saved, as: UTF8.self)
+    runner.check(!text.contains("private-") && !text.contains("sessionID") && !text.contains("prompt"),
+                 "bridge cache discards credentials and conversation fields")
+    let permissions = try FileManager.default.attributesOfItem(atPath: bridgeURL.path)[.posixPermissions] as? NSNumber
+    runner.check(permissions?.intValue == 0o600, "bridge cache is owner-only")
+    runner.checkThrows("stale bridge is not restamped as fresh") {
+        _ = try ClaudeSessionUsageProvider.load(url: bridgeURL, now: measuredAt.addingTimeInterval(601))
+    }
+    runner.checkThrows("bridge rejects future measurement") {
+        try ClaudeSessionUsageProvider.capture(data: bridgeData(captured: 2_000_000_006), url: bridgeURL, now: measuredAt)
+    }
+    runner.checkThrows("bridge rejects out of range percent") {
+        try ClaudeSessionUsageProvider.capture(data: bridgeData(percent: 101), url: bridgeURL, now: measuredAt)
+    }
+    runner.checkThrows("bridge rejects malformed JSON") {
+        try ClaudeSessionUsageProvider.capture(data: Data("{}".utf8), url: bridgeURL, now: measuredAt)
+    }
+    runner.checkThrows("bridge bounds JSON input") {
+        try ClaudeSessionUsageProvider.capture(data: Data(repeating: 32, count: 32_769), url: bridgeURL, now: measuredAt)
+    }
+    runner.check((try? Data(contentsOf: bridgeURL)) == saved, "rejected bridge capture retains prior cache")
+    try ClaudeSessionUsageProvider.capture(data: bridgeData(captured: 1_999_999_999, percent: 80), url: bridgeURL, now: measuredAt)
+    runner.check((try? Data(contentsOf: bridgeURL)) == saved, "older session capture cannot replace newer reading")
+    let emptyBridge = Data(#"{"version":1,"capturedAt":2000000000,"rateLimits":[]}"#.utf8)
+    try ClaudeSessionUsageProvider.capture(data: emptyBridge, url: bridgeURL, now: measuredAt)
+    runner.checkThrows("empty bridge tombstone invalidates prior fresh usage") {
+        _ = try ClaudeSessionUsageProvider.load(url: bridgeURL, now: measuredAt)
+    }
+    let noResetBridge = Data(#"{"version":1,"capturedAt":2000000000,"rateLimits":[{"kind":"five_hour","percentUsed":37}]}"#.utf8)
+    try ClaudeSessionUsageProvider.capture(data: noResetBridge, url: bridgeURL, now: measuredAt)
+    let resetUnknown = try ClaudeSessionUsageProvider.load(url: bridgeURL, now: measuredAt)
+    runner.check(resetUnknown.meterWindow?.usedPercent == 37 && resetUnknown.meterWindow?.resetsAt == nil,
+                 "optional bridge reset preserves known usage without inventing reset time")
+    runner.checkThrows("invalid provided bridge reset is rejected") {
+        try ClaudeSessionUsageProvider.capture(data: Data(#"{"version":1,"capturedAt":2000000000,"rateLimits":[{"kind":"five_hour","percentUsed":37,"resetsAt":-1}]}"#.utf8), url: bridgeURL, now: measuredAt)
+    }
+    try ClaudeSessionUsageProvider.capture(data: bridgeData(reset: 1_999_999_999), url: bridgeURL, now: measuredAt)
+    let partial = try ClaudeSessionUsageProvider.load(url: bridgeURL, now: measuredAt)
+    runner.check(partial.windows.count == 1 && partial.meterWindow == nil, "expired 5-hour window never substitutes weekly")
+    runner.checkThrows("expired bridge windows unavailable") {
+        _ = try ClaudeSessionUsageProvider.load(url: bridgeURL, now: measuredAt.addingTimeInterval(11_000))
+    }
+} catch { runner.check(false, "local bridge fixture: \(error.localizedDescription)") }
+try? FileManager.default.removeItem(at: bridgeDirectory)
+
 print("\nQuotaBar checks: \(runner.passed) passed, \(runner.failed) failed")
 if runner.failed > 0 { exit(1) }
 
@@ -316,16 +374,16 @@ if CommandLine.arguments.contains("--live-claude") {
     let result = ClaudeLockedResult()
     Task.detached {
         do {
-            let live = try await ClaudeUsageProvider().fetch()
-            print("PASS  live Claude request returned \(live.windows.count) quota window(s)")
+            let live = try await ClaudeSessionUsageProvider().fetch()
+            print("PASS  local Claude bridge returned \(live.windows.count) quota window(s)")
             result.set(!live.windows.isEmpty)
         } catch {
-            print("FAIL  live Claude request: \(error.localizedDescription)")
+            print("FAIL  local Claude bridge: \(error.localizedDescription)")
         }
         completion.signal()
     }
     if completion.wait(timeout: .now() + 35) == .timedOut {
-        print("FAIL  live Claude request timed out")
+        print("FAIL  local Claude bridge timed out")
         exit(1)
     }
     if !result.get() { exit(1) }
