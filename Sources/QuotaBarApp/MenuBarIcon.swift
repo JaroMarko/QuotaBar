@@ -84,16 +84,18 @@ enum MenuBarIcon {
         colour.setStroke(); progress.stroke()
     }
 
-    // Monochrome version of the app's Q-shaped quota ring, without its square.
+    // Fixed QuotaBar mark: three bars stay legible at 8pt without resembling a search icon.
+    // Actual usage is represented only by the surrounding provider rings.
     nonisolated private static func drawQuotaMark(diameter: CGFloat, ink: NSColor) {
-        let radius = diameter * 0.36
-        let mark = NSBezierPath(ovalIn: NSRect(x: 12 - radius, y: 12 - radius, width: radius * 2, height: radius * 2))
-        mark.lineWidth = max(1, diameter * 0.13)
-        ink.setStroke(); mark.stroke()
-        let tail = NSBezierPath()
-        tail.lineWidth = mark.lineWidth; tail.lineCapStyle = .round
-        tail.move(to: NSPoint(x: 12 + radius * 0.65, y: 12 - radius * 0.65))
-        tail.line(to: NSPoint(x: 12 + radius * 1.1, y: 12 - radius * 1.1))
-        tail.stroke()
+        let width = diameter * 0.22
+        let gap = diameter * 0.12
+        let left = 12 - (width * 3 + gap * 2) / 2
+        let baseline = 12 - diameter * 0.44
+        ink.setFill()
+        for (index, height) in [0.36, 0.62, 0.88].enumerated() {
+            let rect = NSRect(x: left + CGFloat(index) * (width + gap), y: baseline,
+                              width: width, height: diameter * height)
+            NSBezierPath(roundedRect: rect, xRadius: width * 0.3, yRadius: width * 0.3).fill()
+        }
     }
 }

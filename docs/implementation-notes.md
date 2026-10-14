@@ -71,3 +71,6 @@ User approved trying provider colours in both combined modes. Claude uses terrac
 
 ## Codex contrast correction (1.3.6)
 User rejected indigo because it was unreadable on the dark menu bar. Both combined modes now use cyan: #67E8F9 in dark appearance and #0891B2 in light appearance. This preserves contrast on both backgrounds; provider card accent follows the same appearance-aware palette. Claude terracotta, layout and quota behaviour are unchanged.
+
+## Menu-bar mark (1.3.7)
+User found the circular Q and diagonal tail looked like a search magnifier. Replace only the menu-bar mark with three ascending rounded bars, drawn at8/12/18pt for concentric/semicircle/icon-only modes and inactive fallback. This is a fixed logo; usage remains exclusively in provider rings. The Spotlight app icon remains unchanged. Preserve24pt canvas/28pt item and existing palette/template behaviour.
