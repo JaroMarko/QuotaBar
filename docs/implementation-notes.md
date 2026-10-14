@@ -50,3 +50,6 @@ Main popup quota rows become side-by-side tiles:48pt circular progress with perc
 
 ## Test notifications (1.2.4)
 Settings includes Send test notification, permission/error feedback and a pending state to prevent duplicate clicks. The preview is clearly labelled and bypasses quota/alert ledger changes. App delegate opts into foreground banner+sound for both real alerts and previews. macOS retains notification/Focus control. Payload checks do not request permission or send test notifications; live UI delivery must be checked separately.
+
+## App icon (1.2.5)
+Original Q-shaped quota ring,ivory/cyan on a navy rounded square. Vector source and reproducible AppKit renderer committed; ICNS includes16–1024px1x/2x variants. CFBundleIconFile and packaging include the icon. Installed bundle signature/resource matches verified; LaunchServices registration and Spotlight import refreshed. NSWorkspace.icon(forFile:) returns the new artwork for the installed app (visually checked).53 checks,store/menu tests passed.
