@@ -1,0 +1,6 @@
+.build-quotabar/
+.swiftpm-cache/
+.swiftpm-config/
+.swiftpm-security/
+dist/
+.DS_Store
