@@ -30,6 +30,37 @@ private struct PreviewProvider: UsageProvider {
 
 @MainActor
 enum SmokeChecks {
+    static func verifyMenu() -> Bool {
+        for bounds in [NSRect(x: 0, y: 0, width: 64, height: 24), NSRect(x: 10, y: 5, width: 64, height: 30)] {
+            let anchor = StatusInteraction.anchor(in: bounds)
+            guard anchor.midX == bounds.midX, anchor.minY == bounds.minY,
+                  anchor.height == bounds.height else { return false }
+        }
+        func event(_ type: NSEvent.EventType, flags: NSEvent.ModifierFlags = []) -> NSEvent? {
+            NSEvent.mouseEvent(with: type, location: .zero, modifierFlags: flags, timestamp: 0,
+                               windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 0)
+        }
+        guard !StatusInteraction.isContextClick(event(.leftMouseUp)),
+              StatusInteraction.isContextClick(event(.rightMouseUp)),
+              StatusInteraction.isContextClick(event(.leftMouseUp, flags: .control)),
+              !StatusInteraction.isContextClick(nil) else { return false }
+        let menu = StatusInteraction.contextMenu()
+        guard menu.items.count == 1, let quit = menu.items.first,
+              quit.action == #selector(NSApplication.terminate(_:)),
+              quit.target === NSApplication.shared else { return false }
+        let name = "QuotaBarMenuChecks.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name) }
+        let store = UsageStore(providers: [], defaults: defaults)
+        let controller = NSHostingController(rootView: QuotaBarMenuView(store: store, refreshOnAppear: false))
+        controller.sizingOptions = [.preferredContentSize]
+        controller.view.layoutSubtreeIfNeeded()
+        let size = controller.view.fittingSize
+        guard size.width == 410, size.height > 150, size.height < 350 else { return false }
+        print("PASS menu: hosted size \(size), centred anchor, left/right/control click routing, Quit target")
+        return true
+    }
+
     static func verifyStore() async -> Bool {
         let name = "QuotaBarChecks.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!

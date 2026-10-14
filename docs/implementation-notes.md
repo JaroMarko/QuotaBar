@@ -41,3 +41,6 @@ Jaro found the custom pixel robot too large and not recognisable as Claude. Repl
 - Selection uses lazy single-pass filtering/max and is shared by ring, tooltip and popup. No history filtering/sorting or forecast work in the main overview; usage colours share one helper.
 - Existing provider authentication, retry/429, notifications, persistence formats and stale rules are unchanged. Broad core rewrites and history write batching rejected as unnecessary risk.
 - Native offline previews cover fresh light/dark, stale caches, missing data, provider errors and 20 reported windows. Full native interactive window controls still need unlocked-screen verification if CUA is unavailable.
+
+## Popup anchoring and context menu (1.2.1)
+Before opening, resolve the hosted view fitting size and use preferredContentSize tracking; anchor the popover to the centre of the combined status button. AppKit retains screen-edge collision handling. Right mouse-up and Control-click open a native menu containing Quit QuotaBar; left-click continues to toggle the overview. Menu integration checks verify routing, centred anchor and quit target without terminating the app.
