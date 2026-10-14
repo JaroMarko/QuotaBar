@@ -96,8 +96,10 @@ struct ProviderCard: View {
                     .accessibilityLabel("\(state.provider.displayName) usage details")
             }
             if let snapshot = state.snapshot {
-                ForEach(overviewWindows) { window in
-                    CompactUsageWindowRow(window: window, isMeterWindow: window.id == snapshot.meterWindow?.id)
+                HStack(alignment: .top, spacing: 8) {
+                    ForEach(overviewWindows) { window in
+                        UsageWindowTile(window: window, isMeterWindow: window.id == snapshot.meterWindow?.id)
+                    }
                 }
                 if state.provider == .claude && snapshot.meterWindow == nil {
                     Text("5-hour quota unavailable — ring unconfirmed").font(.caption2).foregroundStyle(.orange)
@@ -140,34 +142,53 @@ struct ProviderCard: View {
     private var accent: Color { state.provider == .claude ? .orange : .indigo }
 }
 
-struct CompactUsageWindowRow: View {
+struct UsageWindowTile: View {
     let window: UsageWindow
     let isMeterWindow: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(window.name).font(.subheadline.weight(.medium))
-                if isMeterWindow {
-                    Text("Bar")
-                        .font(.caption2.weight(.medium)).foregroundStyle(.secondary)
-                        .padding(.horizontal, 4)
-                        .background(.quaternary, in: Capsule())
-                        .help("Shown in the menu bar ring")
-                        .accessibilityLabel("Shown in the menu bar ring")
+        VStack(spacing: 5) {
+            ZStack {
+                Circle().stroke(.quaternary, lineWidth: 4)
+                Circle().trim(from: 0, to: window.clampedUsedPercent / 100)
+                    .stroke(usageColor(window.clampedUsedPercent), style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                VStack(spacing: 0) {
+                    Text(UsageFormatting.percent(window.clampedUsedPercent))
+                        .font(.system(size: 14, weight: .semibold, design: .rounded)).monospacedDigit()
+                    Text("used").font(.system(size: 9)).foregroundStyle(.secondary)
                 }
-                Spacer(minLength: 6)
-                Text("\(UsageFormatting.percent(window.clampedUsedPercent)) used")
-                    .font(.subheadline.monospacedDigit().weight(.semibold))
             }
-            ProgressView(value: window.clampedUsedPercent, total: 100)
-                .tint(usageColor(window.clampedUsedPercent))
-                .accessibilityLabel("\(window.name) usage")
-                .accessibilityValue("\(UsageFormatting.percent(window.clampedUsedPercent)) used, \(UsageFormatting.percent(window.remainingPercent)) remaining")
-            Text(UsageFormatting.countdown(to: window.resetsAt))
+            .frame(width: 48, height: 48)
+            HStack(spacing: 3) {
+                Text(title).font(.caption.weight(.medium)).lineLimit(2)
+                if isMeterWindow {
+                    Text("Bar").font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 3)
+                        .background(.quaternary, in: Capsule())
+                }
+            }
+            Text(UsageFormatting.countdown(to: window.resetsAt).replacingOccurrences(of: "Resets in ", with: "Reset "))
                 .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                .lineLimit(2)
         }
-        .padding(.vertical, 2)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 5)
+        .padding(.vertical, 4)
+        .background(.quinary, in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(window.name)\(isMeterWindow ? ", shown in menu bar" : "")")
+        .accessibilityValue("\(UsageFormatting.percent(window.clampedUsedPercent)) used, \(UsageFormatting.percent(window.remainingPercent)) remaining. \(UsageFormatting.countdown(to: window.resetsAt))")
+        .help(window.name)
+    }
+
+    private var title: String {
+        switch window.name {
+        case "5-hour session": "5 hours"
+        case "Weekly": "7 days"
+        default: window.name
+        }
     }
 }
 

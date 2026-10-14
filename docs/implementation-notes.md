@@ -44,3 +44,6 @@ Jaro found the custom pixel robot too large and not recognisable as Claude. Repl
 
 ## Popup anchoring and context menu (1.2.1)
 Before opening, resolve the hosted view fitting size and use preferredContentSize tracking; anchor the popover to the centre of the combined status button. AppKit retains screen-edge collision handling. Right mouse-up and Control-click open a native menu containing Quit QuotaBar; left-click continues to toggle the overview. Menu integration checks verify routing, centred anchor and quit target without terminating the app.
+
+## Circular quota tiles (1.2.2)
+Main popup quota rows become side-by-side tiles:48pt circular progress with percentage/used in centre, quota name and reset below, Bar badge retained. Native rendering checks cover light/dark,stale,missing,error and additional-model quotas. Only overview presentation changes; ring selection,providers,history,details and mouse interactions are unchanged.
