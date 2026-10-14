@@ -52,7 +52,8 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
         preferencesSubscription = store.preferences.objectWillChange.sink { [weak self] in
             DispatchQueue.main.async { self?.updateIcon() }
         }
-        appearanceObservation = statusItem?.button?.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
+        // Observe the application: status-item snapshots temporarily change the button appearance while drawing.
+        appearanceObservation = NSApplication.shared.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
             Task { @MainActor in self?.updateIcon() }
         }
         timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
