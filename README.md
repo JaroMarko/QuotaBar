@@ -2,11 +2,15 @@
 
 See how much Claude, Codex and Gemini quota you have left, and when each limit resets, from the macOS menu bar.
 
-<img src="docs/images/menu-bar.png" width="360" alt="QuotaBar rings beside the battery and Wi-Fi indicators on a macOS Sonoma desktop preview">
+<p align="center">
+  <img src="docs/images/menu-bar.png" width="100%" alt="QuotaBar rings beside the battery and Wi-Fi indicators on a macOS Sonoma desktop preview">
+</p>
 
 The rings show **quota used**. From the outside in, they track Claude’s 5-hour window, Codex’s 7-day window and Gemini’s 5-hour window. Click the icon to see **quota remaining** and the **time until reset** for each window.
 
-<img src="docs/images/quota-panel.png" width="360" alt="Opened quota panel with sample data. Claude has 76% left in its 5-hour window, Codex has 18% left this week, and Gemini shows three separate windows.">
+<p align="center">
+  <img src="docs/images/quota-panel.png" width="360" alt="Opened quota panel with sample data. Claude has 76% left in its 5-hour window, Codex has 18% left this week, and Gemini shows three separate windows.">
+</p>
 
 In **Nastavenia → Sledované aplikácie**, turn on the providers you use. Both the icon and the panel adapt to your selection. Prefer vertical bars? Choose **Horná lišta → Zobrazenie → Zvislé stĺpce**.
 
