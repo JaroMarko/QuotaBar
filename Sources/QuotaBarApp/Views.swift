@@ -232,7 +232,7 @@ private struct QuotaSummaryRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             GeometryReader { geometry in
                 Capsule().fill(.quaternary)
-                    .overlay(alignment: .leading) {
+                    .overlay(alignment: .trailing) {
                         Capsule().fill(accent)
                             .frame(width: geometry.size.width * window.remainingPercent / 100)
                     }
