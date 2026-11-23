@@ -55,13 +55,14 @@ let highest = UsageSnapshot(
     provider: .codex,
     plan: "Pro",
     windows: [
-        UsageWindow(id: "session", name: "Session", usedPercent: 20, resetsAt: nil, durationMinutes: 300),
+        UsageWindow(id: "session", name: "Session", usedPercent: 95, resetsAt: nil, durationMinutes: 300),
         UsageWindow(id: "weekly", name: "Weekly", usedPercent: 72, resetsAt: nil, durationMinutes: 10_080)
     ],
     fetchedAt: Date()
 )
-runner.check(highest.highestUsedPercent == 72, "highest active usage selection")
-runner.check(highest.meterWindow?.id == "weekly", "ring selects usage percentage rather than shortest duration")
+runner.check(highest.highestUsedPercent == 95, "highest active usage selection")
+runner.check(highest.meterWindow?.id == "weekly", "Codex selects weekly even when the short window is more exhausted")
+runner.check(UsageSnapshot(provider: .codex, plan: nil, windows: [highest.windows[0]], fetchedAt: Date()).meterWindow == nil, "Codex requires a seven-day window")
 let mixed = UsageSnapshot(provider: .claude, plan: nil, windows: [
     UsageWindow(id: "invalid", name: "Invalid", usedPercent: .nan, resetsAt: nil, durationMinutes: nil),
     UsageWindow(id: "claude-five_hour", name: "5-hour session", usedPercent: 80, resetsAt: nil, durationMinutes: 300),
@@ -177,7 +178,7 @@ runner.checkThrows("kill child ignoring SIGTERM") {
 runner.check(Date().timeIntervalSince(timeoutStart) < 3, "subprocess timeout remains bounded")
 let measuredAt = Date(timeIntervalSince1970: 2_000_000_000)
 let measured = UsageSnapshot(provider: .codex, plan: nil, windows: [
-    UsageWindow(id: "session", name: "Session", usedPercent: 31, resetsAt: measuredAt.addingTimeInterval(300), durationMinutes: 300)
+    UsageWindow(id: "session", name: "Weekly", usedPercent: 31, resetsAt: measuredAt.addingTimeInterval(300), durationMinutes: 10080)
 ], fetchedAt: measuredAt, source: "fixture", account: "fixture")
 let fresh = ProviderDisplayState(provider: .codex, snapshot: measured, errorMessage: nil, isRefreshing: false, isStale: false)
 runner.check(fresh.meterValue(at: measuredAt) == 31, "fresh meter uses reported quota")
@@ -323,6 +324,38 @@ do {
 } catch { runner.check(false, "local bridge fixture: \(error.localizedDescription)") }
 try? FileManager.default.removeItem(at: bridgeDirectory)
 
+let geminiFixture = """
+Account: fixture@example.test
+GEMINI MODELS
+Models within this group: Gemini Neon, Gemini Flash
+Weekly Limit Remaining
+[██░] 20.25%
+Refreshes in 2h 17m
+Five Hour Limit Remaining
+[███] 100.00%
+Quota available
+CLAUDE AND GPT MODELS
+Weekly Limit Remaining
+[░░░] 0.00%
+GEMINI 4 ARGON
+Gemini 4 Argon Weekly Limit
+[░░░] 0.00%
+Quota available
+"""
+do {
+    let now = Date(timeIntervalSince1970: 6000)
+    let result = try GeminiAntigravityUsageProvider.parse(geminiFixture, now: now)
+    runner.check(result.windows.map(\.remainingPercent) == [20.25, 100, 0] && result.meterWindow == result.windows[1],
+                 "Gemini groups, shared models, partner exclusion and exact extremes")
+    runner.check(result.windows.first?.resetsAt == now.addingTimeInterval(137 * 60) && result.windows.last?.resetsAt == nil,
+                 "Gemini countdown and absent reset")
+    runner.check(UsageSnapshot(provider: .gemini, plan: nil, windows: [result.windows[0], result.windows[2]], fetchedAt: now).meterWindow == nil, "Gemini requires a five-hour window")
+    runner.check(result.accountID?.count == 64, "Gemini history has an opaque account scope")
+    runner.checkThrows("Gemini rejects coarse or malformed quota") {
+        _ = try GeminiAntigravityUsageProvider.parse(geminiFixture.replacingOccurrences(of: "20.25%", with: "low"))
+    }
+} catch { runner.check(false, "Gemini fixture: \(error)") }
+
 print("\nQuotaBar checks: \(runner.passed) passed, \(runner.failed) failed")
 if runner.failed > 0 { exit(1) }
 
@@ -420,4 +453,20 @@ if CommandLine.arguments.contains("--live-hybrid-claude") {
         done.signal()
     }
     if done.wait(timeout: .now() + 30) == .timedOut { print("Live hybrid Claude probe timed out"); exit(1) }
+}
+
+if CommandLine.arguments.contains("--live-gemini") {
+    let done = DispatchSemaphore(value: 0)
+    let passed = HybridCheckResult()
+    Task.detached {
+        do {
+            let snapshot = try await GeminiAntigravityUsageProvider().fetch()
+            for window in snapshot.windows {
+                print("\(window.name): \(String(format: "%.2f", window.remainingPercent))% left")
+            }
+            passed.set(true)
+        } catch { print("FAIL Gemini /usage: \(error.localizedDescription)") }
+        done.signal()
+    }
+    if done.wait(timeout: .now() + 40) == .timedOut || !passed.get() { exit(1) }
 }

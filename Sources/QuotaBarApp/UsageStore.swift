@@ -34,7 +34,7 @@ final class UsageStore: ObservableObject {
     private var presence: [ProviderKind: Bool] = [:]
     private var pendingSourceMigration: Set<ProviderKind> = []
 
-    init(providers: [any UsageProvider] = [ClaudeHybridUsageProvider(), CodexUsageProvider()],
+    init(providers: [any UsageProvider] = [ClaudeHybridUsageProvider(), CodexUsageProvider(), GeminiAntigravityUsageProvider()],
          preferences: AppPreferences? = nil, defaults: UserDefaults = .standard,
          historyPersistence: HistoryPersistence = HistoryPersistence(), networkAvailable: Bool = true,
          activityProbe: @escaping @MainActor (ProviderKind) -> Bool? = { ProviderActivityProbe.isRunning($0) }) {
@@ -84,7 +84,7 @@ final class UsageStore: ObservableObject {
         refreshLoop?.cancel(); networkMonitor.cancel()
     }
 
-    var orderedStates: [ProviderDisplayState] { [.claude, .codex].compactMap { states[$0] } }
+    var orderedStates: [ProviderDisplayState] { ProviderKind.allCases.compactMap { states[$0] } }
 
     private func synchronizeActivity() {
         for kind in ProviderKind.allCases {
@@ -248,7 +248,7 @@ final class UsageStore: ObservableObject {
                     }
                     synchronizeActivity()
                     // Claude sources do not yet share a verified account identity.
-                    if presence[kind] != true || kind == .claude { continue }
+                    if presence[kind] != true || kind == .claude || (kind == .gemini && snapshot.accountID == nil) { continue }
                     let alerts = ledger.take(previous: previous, current: snapshot,
                         thresholds: preferences.enabledThresholds, resetEnabled: preferences.notificationReset)
                     if let data = try? JSONEncoder().encode(ledger) { defaults.set(data, forKey: "alertLedger") }

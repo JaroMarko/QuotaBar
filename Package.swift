@@ -14,7 +14,8 @@ let package = Package(
     targets: [
         .target(
             name: "QuotaBarCore",
-            path: "Sources/QuotaBarCore"
+            path: "Sources/QuotaBarCore",
+            resources: [.copy("Resources/agy-quota.exp")]
         ),
         .executableTarget(
             name: "QuotaBar",

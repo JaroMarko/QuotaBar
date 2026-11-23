@@ -3,32 +3,40 @@ import QuotaBarCore
 import ServiceManagement
 
 enum MenuBarMode: String, CaseIterable, Identifiable {
-    case concentric, claude, codex, iconOnly, semicircles
+    case concentric, columns, semicircles, claude, codex, gemini, iconOnly
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .concentric: "Both — concentric rings"
-        case .claude: "Claude only"
-        case .codex: "Codex only"
-        case .iconOnly: "QuotaBar icon only"
-        case .semicircles: "Both — semicircles"
+        case .concentric: "Tri prstence"
+        case .columns: "Zvislé stĺpce"
+        case .semicircles: "Polkruhy · Claude a Codex"
+        case .claude: "Iba Claude"
+        case .codex: "Iba Codex"
+        case .gemini: "Iba Gemini"
+        case .iconOnly: "Iba ikona QuotaBar"
         }
     }
+    var hasCenterMark: Bool { self == .concentric || self == .semicircles }
+
     var providers: [ProviderKind] {
         switch self {
         case .claude: [.claude]
         case .codex: [.codex]
-        case .concentric, .semicircles: [.claude, .codex]
+        case .gemini: [.gemini]
+        case .concentric, .columns: [.claude, .codex, .gemini]
+        case .semicircles: [.claude, .codex]
         case .iconOnly: []
         }
     }
     var explanation: String {
         switch self {
-        case .concentric: "Used quota: outer terracotta ring Claude 5h; inner cyan ring Codex most-used window."
-        case .claude: "Menu bar shows used quota: Claude 5-hour session."
-        case .codex: "Menu bar shows used quota: Codex most-used window."
-        case .iconOnly: "Menu bar shows the QuotaBar icon; quota details are shown in this popup."
-        case .semicircles: "Used quota: left terracotta half Claude 5h; right cyan half Codex most-used window."
+        case .concentric: "Prstence ukazujú využitie od vonkajšieho po vnútorný: Claude 5 h, Codex 7 dní, Gemini 5 h."
+        case .columns: "Zľava Claude 5 h, Codex 7 dní a Gemini 5 h. Farebná časť rastie zhora nadol podľa vyčerpanej kvóty."
+        case .claude: "Využitie päťhodinového okna Claude."
+        case .codex: "Využitie týždenného okna Codexu."
+        case .gemini: "Využitie päťhodinového okna Gemini."
+        case .iconOnly: "Kliknutím na ikonu otvoríš prehľad kvót."
+        case .semicircles: "Vľavo využitie päťhodinového okna Claude, vpravo týždenného okna Codexu."
         }
     }
 }
@@ -36,6 +44,7 @@ enum MenuBarMode: String, CaseIterable, Identifiable {
 @MainActor
 final class AppPreferences: ObservableObject {
     private enum Key {
+        static let showsCenterMark = "showsCenterMark"
         static let menuBarMode = "menuBarMode"
         static let launchAtLogin = "launchAtLogin"
         static let notification75 = "notification75"
@@ -47,6 +56,10 @@ final class AppPreferences: ObservableObject {
 
     @Published var menuBarMode: MenuBarMode {
         didSet { defaults.set(menuBarMode.rawValue, forKey: Key.menuBarMode) }
+    }
+
+    @Published var showsCenterMark: Bool {
+        didSet { defaults.set(showsCenterMark, forKey: Key.showsCenterMark) }
     }
 
     @Published var launchAtLogin: Bool {
@@ -65,6 +78,7 @@ final class AppPreferences: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        showsCenterMark = defaults.object(forKey: Key.showsCenterMark) as? Bool ?? true
         menuBarMode = defaults.string(forKey: Key.menuBarMode).flatMap(MenuBarMode.init(rawValue:)) ?? .concentric
         if !defaults.bool(forKey: Key.defaultsRegistered) {
             defaults.set(true, forKey: Key.launchAtLogin)

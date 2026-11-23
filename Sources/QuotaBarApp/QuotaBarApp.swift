@@ -74,7 +74,7 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
 
     private func updateIcon() {
         let states = UsageStore.shared.orderedStates
-        statusItem?.button?.image = MenuBarIcon.image(states: states, mode: UsageStore.shared.preferences.menuBarMode, appearance: statusItem?.button?.effectiveAppearance)
+        statusItem?.button?.image = MenuBarIcon.image(states: states, mode: UsageStore.shared.preferences.menuBarMode, showsCenterMark: UsageStore.shared.preferences.showsCenterMark, appearance: statusItem?.button?.effectiveAppearance)
         let mode = UsageStore.shared.preferences.menuBarMode
         statusItem?.button?.toolTip = mode.explanation + "\n" + states.map { state in
             if state.isInactive { return "\(state.provider.displayName): Vypnutá" }

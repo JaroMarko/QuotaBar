@@ -1,14 +1,28 @@
 # QuotaBar
 
-QuotaBar is a private, local-first macOS menu-bar app for Claude/Claude Code and ChatGPT Work/Codex subscription usage.
+QuotaBar is a private, local-first macOS menu-bar app for Claude/Claude Code, ChatGPT Work/Codex and native Gemini quotas in Antigravity CLI.
 
 ## Requirements
 
 - macOS 14 or newer on Apple Silicon
+- For Gemini, a signed-in Antigravity CLI (verified with agy 1.5.14)
 - Codex CLI signed in with ChatGPT
 - Local Claude Code session (Desktop Code>=2.1.286 or CLI>=2.1.287), signed in, with the included QuotaBar mod installed
 
 QuotaBar never stores or logs provider credentials. It reads the existing CLI sessions only during refresh and stores preferences, the last successful usage snapshot, notification deduplication and bounded local usage history.
+
+## Install and update with Homebrew
+
+```sh
+brew tap jaromarko/quotabar https://github.com/JaroMarko/QuotaBar.git
+brew install --cask jaromarko/quotabar/quotabar
+```
+
+If you previously installed QuotaBar manually, quit it and move the existing
+`/Applications/QuotaBar.app` to a backup folder before the first cask install.
+Your preferences and quota history are stored separately from the app bundle.
+For subsequent releases, run `brew update && brew upgrade --cask quotabar`.
+The Apple Silicon download is ad-hoc signed and has no Apple notarization.
 
 ## Build and check
 
@@ -26,6 +40,10 @@ The bundle and installer identifiers retain `com.jaroslavmarko.planmeter` for co
 
 The app build uses the native SwiftPM build system and macOS 26.5 SDK when available. Set `QUOTABAR_SDK_PATH` to override the SDK.
 
+## Gemini via Antigravity CLI
+
+While a user session of `agy` is running, QuotaBar opens its own pseudoterminal in an empty workspace, selects the built-in `/usage` command, and reads the quota panel. Each native Gemini group and reset window appears once. The inner ring shows used quota for the five-hour window. Account-scoped history and alerts use a hash of the identity on the quota screen. To compare the provider output with your interactive CLI, run `.build-quotabar/release/QuotaBarChecks --live-gemini`.
+
 ## Claude hybrid source
 
 After installing QuotaBar in `/Applications`, run `./scripts/install_claude_bridge.sh`. It adds only the bundled local marketplace and mod, preserving existing Claude plugins and Caveman statusline. Fresh local5h measurements (up to5min) take priority; when unavailable/older, an experimental read-only OAuth usage request uses the existing Claude Code login. No login/token refresh is performed. Requests are spaced by at least5min; cached fresh API data can avoid requests for10min. HTTP429 pauses15/30/60min, respects a longer Retry-After, survives restarts and never blocks new local data. In an existing local Code session, run `/reload-plugins` then `/quotabar-sync`, or open a new session. The mod exports on `session.measure` (turn completion / reported plan usage changes), and offers a manual sync command without an LLM request.
@@ -36,10 +54,10 @@ Only the 5-hour/weekly percentages, reset timestamps and measurement time are sa
 
 ## Monitoring and privacy
 
-- Menu bar: one compact24pt image (28pt status item), no text. Settings selects concentric rings (default:outer Claude,inner Codex),left/right semicircles (Claude/Codex),Claude only,Codex only or QuotaBar icon only. Provider-only modes retain their logo; combined modes have a refined Q matching the app identity in the centre. Combined rings use terracotta for Claude (#D97757) and cyan for Codex (#0891B2 on light backgrounds, #67E8F9 on dark backgrounds), with neutral unused tracks; the centre adapts to the menu bar appearance. Claude displays the shared 5-hour session; Codex displays its most-used reported window. Dotted rings mean current data is unavailable/stale, including a missing Claude 5h value.
+- Menu bar: one compact24pt image (28pt status item), no text. Settings selects concentric rings (default: outer Claude, middle Codex, inner Gemini),left/right semicircles (Claude/Codex),individual Claude, Codex or Gemini rings, three vertical columns or the QuotaBar icon only. Columns fill from top to bottom with used quota for Claude 5h, Codex 7d and Gemini 5h, left to right. Provider-only modes retain their logo; combined modes have a refined Q matching the app identity in the centre. Combined rings use terracotta for Claude (#D97757) and cyan for Codex (#0891B2 on light backgrounds, #67E8F9 on dark backgrounds), with neutral unused tracks; the centre adapts to the menu bar appearance. Claude and Gemini display five-hour usage. Codex displays seven-day usage. An absent period has no substitute. Dotted rings mean current data is unavailable/stale, including a missing Claude 5h value.
 - Interaction: left-click opens/closes the centred popup; right-click or Control-click opens a native Quit menu. Popup size follows the current content; macOS keeps it within screen edges.
 - Popup: shared quota tiles side by side, circular usage rings with centred percentages and reset countdowns without scrolling. A Bar badge marks the ring window. Additional model windows, history, forecast, exact resets and source/account diagnostics are available in separate resizable Details windows. Claude session.usage does not supply account identity. Its source is shown in Details; Claude forecasts and automatic quota notifications are withheld while identity is unknown. Codex notifications and test notifications remain available.
-- Activity: each provider pauses quota checks while neither its desktop app nor native CLI is running. Claude desktop/Claude Code and Codex/ChatGPT/Codex CLI are detected separately; inactive cards show Vypnutá and hide cached percentages/rings. App launch/quit updates promptly; CLI activity is checked by the20-second background loop and when refreshing. Failed detection stays unknown,not inactive. Own app-server and other users’ CLI processes are excluded.
+- Activity: each provider pauses quota checks while neither its desktop app nor native CLI is running. Claude desktop/Claude Code and Codex/ChatGPT/Codex CLI are detected separately; inactive cards show Vypnutá. Gemini retains the last measured values and timestamp in its card. App launch/quit updates promptly; CLI activity is checked by the20-second background loop and when refreshing. Failed detection stays unknown,not inactive. Own app-server and other users’ CLI processes are excluded.
 - Errors: ? explains the problem on hover or click; popup shows the next retry time. A429 pause survives app restarts. Claude primarily uses local session.usage; experimental OAuth fallback has a separate persisted cooldown. Fallback status is shown without hiding valid last-known rings. Provider contracts: `docs/data-sources-2026-10-14.md`.
 - Refresh: 1 minute while usage changes, usage is high or reset is near; 5 minutes when quiet. Errors back off to 15 minutes, and 429 responses enforce a 10-minute cooldown even for manual refresh.
 - Quota history: local `~/Library/Application Support/QuotaBar/history.json`, limited to 30 days and 10,000 samples. No prompts/transcripts are read. Clear it from the menu's trash button.

@@ -1,0 +1,40 @@
+log_user 0
+set timeout 9
+set env(TERM) xterm-256color
+cd [lindex $argv 1]
+set stty_init "rows 200 columns 180"
+spawn -noecho [lindex $argv 0]
+match_max 160000
+set signin 0
+expect {
+    -exact "Do you trust the contents of this project?" { send -- "\r"; exp_continue -continue_timer }
+    -exact "not signed in" { set signin 1; exp_continue -continue_timer }
+    -exact "? for shortcuts" {}
+    timeout { exit [expr {$signin ? 3 : 4}] }
+    eof { exit 2 }
+}
+# Confirm the built-in selection before pressing Enter. Never submit a model prompt.
+send -- "/usage"
+expect {
+    -exact "View model quota usage" {}
+    timeout { exit 4 }
+    eof { exit 2 }
+}
+send -- "\r"
+expect {
+    -exact "Models & Quota" {}
+    timeout { exit 4 }
+    eof { exit 2 }
+}
+expect {
+    -exact "GEMINI " { puts -nonewline $expect_out(buffer) }
+    timeout { exit 4 }
+    eof { exit 2 }
+}
+expect {
+    -re {esc[^\r\n]{0,40} Close} { puts -nonewline $expect_out(buffer) }
+    timeout { exit 4 }
+    eof { exit 2 }
+}
+close
+wait

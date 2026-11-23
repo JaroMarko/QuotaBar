@@ -109,12 +109,14 @@ enum SmokeChecks {
         let defaults = UserDefaults(suiteName: name)!
         defer { defaults.removePersistentDomain(forName: name) }
         let preferences = AppPreferences(defaults: defaults)
-        guard preferences.menuBarMode == .concentric else { return false }
+        guard preferences.showsCenterMark, preferences.menuBarMode == .concentric else { return false }
+        preferences.showsCenterMark = false
+        guard !AppPreferences(defaults: defaults).showsCenterMark else { return false }
         for mode in MenuBarMode.allCases {
             preferences.menuBarMode = mode
             guard AppPreferences(defaults: defaults).menuBarMode == mode,
                   MenuBarIcon.image(states: [], mode: mode).size == NSSize(width: 24, height: 24),
-                  MenuBarIcon.image(states: [], mode: mode).isTemplate == (mode != .concentric && mode != .semicircles) else { return false }
+                  MenuBarIcon.image(states: [], mode: mode).isTemplate == (mode != .concentric && mode != .semicircles && mode != .columns) else { return false }
         }
         defaults.set("invalid-future-mode", forKey: "menuBarMode")
         guard AppPreferences(defaults: defaults).menuBarMode == .concentric,
@@ -122,31 +124,39 @@ enum SmokeChecks {
               MenuBarMode.claude.providers == [.claude], MenuBarMode.codex.providers == [.codex] else { return false }
         defaults.removeObject(forKey: "menuBarMode")
         let now = Date()
-        func states(_ claude: Double, _ codex: Double) -> [ProviderDisplayState] {
-            zip([ProviderKind.claude, .codex], [claude, codex]).map { provider, value in
+        func states(_ claude: Double, _ codex: Double, _ gemini: Double = 60) -> [ProviderDisplayState] {
+            zip([ProviderKind.claude, .codex, .gemini], [claude, codex, gemini]).map { provider, value in
                 ProviderDisplayState(provider: provider, snapshot: UsageSnapshot(provider: provider, plan: nil,
                     windows: [UsageWindow(id: provider == .claude ? "claude-five_hour" : "weekly", name: "Fixture", usedPercent: value,
-                        resetsAt: now.addingTimeInterval(3600), durationMinutes: 300)], fetchedAt: now),
+                        resetsAt: now.addingTimeInterval(3600), durationMinutes: provider == .codex ? 10080 : 300)], fetchedAt: now),
                     errorMessage: nil, isRefreshing: false, isStale: false)
             }
         }
-        func pixels(_ mode: MenuBarMode, _ states: [ProviderDisplayState], appearance: NSAppearance.Name = .aqua) -> Data? {
-            guard let tiff = MenuBarIcon.image(states: states, mode: mode, now: now, appearance: NSAppearance(named: appearance)).tiffRepresentation,
+        func pixels(_ mode: MenuBarMode, _ states: [ProviderDisplayState], appearance: NSAppearance.Name = .aqua, showsCenterMark: Bool = true) -> Data? {
+            guard let tiff = MenuBarIcon.image(states: states, mode: mode, showsCenterMark: showsCenterMark, now: now, appearance: NSAppearance(named: appearance)).tiffRepresentation,
                   let bitmap = NSBitmapImageRep(data: tiff) else { return nil }
             return bitmap.representation(using: .png, properties: [:])
         }
         let first = states(20, 30), second = states(20, 80)
+        for mode in MenuBarMode.allCases {
+            guard let shown = pixels(mode, first), let hidden = pixels(mode, first, showsCenterMark: false),
+                  (shown != hidden) == mode.hasCenterMark else { return false }
+        }
         guard let claudePixels = pixels(.claude, first),
               claudePixels == pixels(.claude, second),
+              pixels(.concentric, first) != pixels(.concentric, states(20, 30, 0)),
+              pixels(.semicircles, first) == pixels(.semicircles, states(20, 30, 0)),
               pixels(.codex, first) != pixels(.codex, second),
               pixels(.concentric, first) != pixels(.concentric, second),
               pixels(.semicircles, first) != pixels(.semicircles, second),
+              pixels(.columns, first) != pixels(.columns, second),
+              pixels(.gemini, first) != pixels(.gemini, states(20, 30, 0)),
               pixels(.iconOnly, first) == pixels(.iconOnly, second),
               pixels(.claude, first) != pixels(.claude, []),
               pixels(.codex, first) != pixels(.codex, []) else { return false }
 
         // Colour images must adapt their central glyph/track, while inactive modes remain system templates.
-        for mode in [MenuBarMode.concentric, .semicircles] {
+        for mode in [MenuBarMode.concentric, .semicircles, .columns] {
             guard pixels(mode, first, appearance: .aqua) != pixels(mode, first, appearance: .darkAqua) else { return false }
             var inactive = first
             for index in inactive.indices { inactive[index].isInactive = true }
@@ -158,8 +168,8 @@ enum SmokeChecks {
         controller.sizingOptions = [.preferredContentSize]
         controller.view.layoutSubtreeIfNeeded()
         let size = controller.view.fittingSize
-        guard size.width == 410, size.height > 150, size.height < 350 else { return false }
-        print("PASS menu: hosted size \(size), centred anchor, left/right/control click routing, Quit target, test notification payload, five persisted 24pt modes, light/dark combined rings, inactive template fallback")
+        guard size.width == 360, size.height > 150, size.height < 500 else { return false }
+        print("PASS menu: hosted size \(size), centred anchor, left/right/control click routing, Quit target, test notification payload, seven persisted 24pt modes, light/dark combined rings, inactive template fallback")
         return true
     }
 
@@ -412,7 +422,7 @@ enum SmokeChecks {
         let name = "QuotaBarPreview.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!
         defer { defaults.removePersistentDomain(forName: name) }
-        let snapshots = [ProviderKind.claude, .codex].map { kind in
+        var snapshots = [ProviderKind.claude, .codex].map { kind in
             UsageSnapshot(provider: kind, plan: "Pro", windows: [
                 UsageWindow(id: kind == .claude ? "claude-five_hour" : "codex-primary",
                             name: "5-hour session", usedPercent: 24, resetsAt: now.addingTimeInterval(7200), durationMinutes: 300),
@@ -420,6 +430,11 @@ enum SmokeChecks {
                             name: "Weekly", usedPercent: 82, resetsAt: now.addingTimeInterval(3 * 86400), durationMinutes: 10080)
             ], fetchedAt: now, source: "Preview", account: "Preview")
         }
+        snapshots.append(UsageSnapshot(provider: .gemini, plan: nil, windows: [
+            UsageWindow(id: "weekly", name: "Gemini Models · Weekly Limit Remaining", usedPercent: 30.61, resetsAt: now.addingTimeInterval(86400), durationMinutes: 10080),
+            UsageWindow(id: "five-hour", name: "Gemini Models · Five Hour Limit Remaining", usedPercent: 17.83, resetsAt: now.addingTimeInterval(9000), durationMinutes: 300),
+            UsageWindow(id: "argon", name: "Gemini 4 Argon Weekly Limit", usedPercent: 0, resetsAt: nil, durationMinutes: 10080)
+        ], fetchedAt: now, source: "Preview"))
         for snapshot in snapshots {
             defaults.set(try? JSONEncoder().encode(snapshot), forKey: "cachedSnapshot.\(snapshot.provider.rawValue)")
         }
@@ -457,7 +472,8 @@ enum SmokeChecks {
         guard pausedStore.states[.claude]?.meterValue() == 24,
               renderPopup(store: pausedStore, path: base + "-api-pause.png", appearance: .aqua) else { return false }
         let extraSnapshots = snapshots.map { snapshot in
-            UsageSnapshot(provider: snapshot.provider, plan: snapshot.plan, windows: snapshot.windows + (0..<8).map { index in
+            if snapshot.provider == .gemini { return snapshot }
+            return UsageSnapshot(provider: snapshot.provider, plan: snapshot.plan, windows: snapshot.windows + (0..<8).map { index in
                 UsageWindow(id: "model-\(index)", name: "Additional model \(index)", usedPercent: Double(90 + index),
                             resetsAt: now.addingTimeInterval(86400), durationMinutes: 10080)
             }, fetchedAt: now)
@@ -479,7 +495,7 @@ enum SmokeChecks {
             .background(Color(nsColor: .windowBackgroundColor)))
         view.appearance = NSAppearance(named: appearance)
         let size = view.fittingSize
-        guard size.width == 410, size.height > 150, size.height <= 620 else {
+        guard size.width == 360, size.height > 150, size.height <= 460 else {
             print("FAIL popup fitting size: \(size)"); return false
         }
         view.frame = NSRect(origin: .zero, size: size)
@@ -489,7 +505,7 @@ enum SmokeChecks {
         guard let png = bitmap.representation(using: .png, properties: [:]) else { return false }
         do { try png.write(to: URL(fileURLWithPath: path), options: .atomic) }
         catch { print("FAIL popup preview: \(error)"); return false }
-        print("PASS no-scroll native popup: \(Int(size.width)) × \(Int(size.height))pt, \(URL(fileURLWithPath: path).lastPathComponent)")
+        print("PASS native popup: \(Int(size.width)) × \(Int(size.height))pt, \(URL(fileURLWithPath: path).lastPathComponent)")
         return true
     }
 
@@ -501,19 +517,19 @@ enum SmokeChecks {
         for dark in [false, true] {
         let appearance = NSAppearance(named: dark ? .darkAqua : .aqua)!
         let labelColour = dark ? NSColor.white : NSColor.black
-        let image = NSImage(size: NSSize(width: 720, height: 320), flipped: false) { _ in
+        let image = NSImage(size: NSSize(width: 130 + modes.count * 116, height: 320), flipped: false) { _ in
             (dark ? NSColor(white: 0.12, alpha: 1) : NSColor.white).setFill()
-            NSBezierPath(rect: NSRect(x: 0, y: 0, width: 720, height: 320)).fill()
-            let labels = ["Concentric", "Claude", "Codex", "Icon only", "Semicircles"]
+            NSBezierPath(rect: NSRect(x: 0, y: 0, width: 130 + modes.count * 116, height: 320)).fill()
+            let labels = modes.map(\.title)
             for (index, label) in labels.enumerated() {
                 (label as NSString).draw(at: NSPoint(x: 130 + index * 116, y: 290),
                     withAttributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: labelColour])
             }
             for (row, values) in combinations.enumerated() {
-                let states = zip([ProviderKind.claude,.codex], [values.0,values.1]).map { kind, used in
+                let states = zip([ProviderKind.claude, .codex, .gemini], [values.0, values.1, values.0.map { 100 - $0 }]).map { kind, used in
                     ProviderDisplayState(provider: kind, snapshot: used.map { value in
                         UsageSnapshot(provider: kind, plan: nil, windows: [UsageWindow(id: kind == .claude ? "claude-five_hour" : "fixture", name: "Fixture", usedPercent: value,
-                            resetsAt: now.addingTimeInterval(3600), durationMinutes: 60)], fetchedAt: now)
+                            resetsAt: now.addingTimeInterval(3600), durationMinutes: kind == .codex ? 10080 : 300)], fetchedAt: now)
                     }, errorMessage: nil, isRefreshing: false, isStale: false)
                 }
                 let y = CGFloat(224 - row * 65)

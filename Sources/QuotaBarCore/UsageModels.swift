@@ -3,6 +3,7 @@ import Foundation
 public enum ProviderKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case claude
     case codex
+    case gemini
 
     public var id: String { rawValue }
 
@@ -10,6 +11,7 @@ public enum ProviderKind: String, Codable, CaseIterable, Identifiable, Sendable 
         switch self {
         case .claude: "Claude"
         case .codex: "Codex"
+        case .gemini: "Gemini · Antigravity"
         }
     }
 
@@ -17,6 +19,7 @@ public enum ProviderKind: String, Codable, CaseIterable, Identifiable, Sendable 
         switch self {
         case .claude: "sparkles"
         case .codex: "terminal.fill"
+        case .gemini: "diamond.fill"
         }
     }
 }
@@ -74,12 +77,16 @@ public struct UsageSnapshot: Codable, Equatable, Sendable {
             .max { $0.clampedUsedPercent < $1.clampedUsedPercent }
     }
 
-    /// Claude always shows its shared 5-hour session; never substitute weekly.
+    /// Each ring tracks a fixed period, independent of other windows' utilization.
     public var meterWindow: UsageWindow? {
-        if provider == .claude {
-            return windows.first { $0.id == "claude-five_hour" && $0.usedPercent.isFinite }
+        windows.first { window in
+            guard window.usedPercent.isFinite else { return false }
+            switch provider {
+            case .claude: return window.id == "claude-five_hour"
+            case .codex: return window.durationMinutes == 10_080
+            case .gemini: return window.durationMinutes == 300
+            }
         }
-        return mostUsedWindow
     }
 
     public var highestUsedPercent: Double { mostUsedWindow?.clampedUsedPercent ?? 0 }

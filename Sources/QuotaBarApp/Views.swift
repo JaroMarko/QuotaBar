@@ -10,21 +10,23 @@ struct QuotaBarMenuView: View {
     @State private var confirmingClearHistory = false
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 60)) { _ in
-            VStack(spacing: 10) {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            VStack(spacing: 8) {
                 header
-                ForEach(store.orderedStates) { state in
-                    ProviderCard(state: state, preferences: store.preferences, nextRetry: store.nextRefreshAt[state.provider])
+                ViewThatFits(in: .vertical) {
+                    providerCards(at: context.date).fixedSize(horizontal: false, vertical: true)
+                    ScrollView { providerCards(at: context.date) }
                 }
-                MenuBarLegend(preferences: store.preferences, inactiveProviders: Set(store.orderedStates.filter(\.isInactive).map(\.provider)))
+                .frame(maxHeight: 340)
+                if !store.networkAvailable { Text("Offline · posledné meranie").font(.caption).foregroundStyle(.secondary) }
                 if let error = store.historyError {
                     Text(error).font(.caption2).foregroundStyle(.orange)
                 }
                 Divider()
                 footer
             }
-            .padding(14)
-            .frame(width: 410)
+            .padding(12)
+            .frame(width: 360)
         }
         .task { if refreshOnAppear { await store.refreshIfStale() } }
         .sheet(isPresented: $showingAbout) { AboutView() }
@@ -34,142 +36,112 @@ struct QuotaBarMenuView: View {
         } message: { Text("Recorded percentages and reset times will be removed. Provider credentials are unaffected.") }
     }
 
-    private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("QuotaBar").font(.headline)
-                Text(store.networkAvailable ? lastUpdatedText : "Offline — last known data")
-                    .font(.caption).foregroundStyle(.secondary)
+    private func providerCards(at now: Date) -> some View {
+        VStack(spacing: 0) {
+            ForEach(store.orderedStates) { state in
+                ProviderCard(state: state, now: now, nextRetry: store.nextRefreshAt[state.provider])
             }
-            Spacer()
-            Button { Task { await store.refreshAll(force: true) } } label: {
-                Image(systemName: "arrow.clockwise")
-            }
-            .buttonStyle(.borderless)
-            .disabled(store.isRefreshing)
-            .help("Refresh usage")
-            .accessibilityLabel("Refresh usage")
         }
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            Text("Kvóta").frame(maxWidth: .infinity, alignment: .leading)
+            Text("Zostáva").frame(width: QuotaSummaryRow.percentWidth, alignment: .trailing)
+            Text("Reset o").frame(width: QuotaSummaryRow.resetWidth, alignment: .trailing)
+        }
+        .font(.caption.weight(.medium))
+        .foregroundStyle(.secondary)
+        .padding(.bottom, 4)
+        .overlay(alignment: .bottom) { Divider() }
     }
 
     private var footer: some View {
         HStack(spacing: 14) {
             Button { QuotaBarDelegate.shared?.showSettings() } label: {
-                Label("Settings", systemImage: "gearshape")
+                Label("Nastavenia", systemImage: "gearshape")
             }.buttonStyle(.borderless)
-            Button("About") { showingAbout = true }.buttonStyle(.borderless)
+            Button { Task { await store.refreshAll(force: true) } } label: { Image(systemName: "arrow.clockwise") }
+                .buttonStyle(.borderless).disabled(store.isRefreshing)
+                .help(lastUpdatedText).accessibilityLabel("Obnoviť kvóty")
+            Button("O aplikácii") { showingAbout = true }.buttonStyle(.borderless)
             Button { confirmingClearHistory = true } label: { Image(systemName: "trash") }
                 .help("Clear local usage history")
                 .accessibilityLabel("Clear local usage history")
                 .buttonStyle(.borderless)
             Spacer()
-            Button("Quit") { NSApplication.shared.terminate(nil) }.buttonStyle(.borderless)
+            Button("Ukončiť") { NSApplication.shared.terminate(nil) }.buttonStyle(.borderless)
         }.font(.caption)
     }
 
     private var lastUpdatedText: String {
         if store.orderedStates.allSatisfy(\.isInactive) { return "Sledovanie je pozastavené" }
-        guard let date = store.lastRefreshAt else { return "Waiting for first refresh" }
-        return "Last check \(date.formatted(date: .omitted, time: .shortened))"
+        guard let date = store.lastRefreshAt else { return "Čaká sa na prvé meranie" }
+        return "Posledná kontrola \(date.formatted(date: .omitted, time: .shortened))"
     }
 }
 
-private struct MenuBarLegend: View {
-    @ObservedObject var preferences: AppPreferences
-    let inactiveProviders: Set<ProviderKind>
-    private var explanation: String {
-        let mode = preferences.menuBarMode
-        guard !mode.providers.isEmpty else { return mode.explanation }
-        if mode.providers.allSatisfy({ inactiveProviders.contains($0) }) {
-            return mode.providers.count == 2
-                ? "Apps are off — menu bar shows the QuotaBar icon."
-                : "\(mode.providers[0].displayName) is off — its icon has no quota ring."
-        }
-        return mode.explanation + (mode.providers.contains(where: { inactiveProviders.contains($0) })
-            ? " Rings are hidden for apps that are off." : "")
-    }
-    var body: some View {
-        Text(explanation).font(.caption2).foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-struct ProviderCard: View {
+private struct ProviderCard: View {
     let state: ProviderDisplayState
-    @ObservedObject var preferences: AppPreferences
+    let now: Date
     var nextRetry: Date?
+    @Environment(\.colorScheme) private var scheme
+
+    private var snapshot: UsageSnapshot? {
+        state.isInactive && state.provider != .gemini ? nil : state.snapshot
+    }
+
+    private var windows: [UsageWindow] {
+        (snapshot?.windows ?? []).filter { window in
+            state.provider != .codex || !(window.name.hasSuffix("5-hour session") || window.durationMinutes == 300)
+        }.sorted { lhs, rhs in
+            let left = lhs.durationMinutes ?? .max, right = rhs.durationMinutes ?? .max
+            if left != right { return left < right }
+            if state.provider == .gemini {
+                let leftShared = lhs.name.hasPrefix("Gemini Models · ")
+                let rightShared = rhs.name.hasPrefix("Gemini Models · ")
+                if leftShared != rightShared { return leftShared }
+            }
+            return lhs.id < rhs.id
+        }
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: state.provider.symbolName).foregroundStyle(accent)
-                Text(state.provider.displayName).font(.headline)
-                if !state.isInactive, let plan = state.snapshot?.plan, !plan.isEmpty {
-                    Text(plan).font(.caption2).foregroundStyle(.secondary)
-                }
-                Spacer()
-                if state.isRefreshing { ProgressView().controlSize(.small) }
-                if !state.isInactive {
-                Button(detailLabel) { QuotaBarDelegate.shared?.showDetails(for: state.provider) }
-                    .buttonStyle(.borderless)
-                    .font(.caption)
-                    .foregroundStyle(.tint)
-                    .accessibilityLabel("\(state.provider.displayName) usage details")
-                }
-            }
-            if state.isInactive {
-                InactiveProviderNotice(provider: state.provider)
-            } else if let snapshot = state.snapshot {
-                HStack(alignment: .top, spacing: 8) {
-                    ForEach(overviewWindows) { window in
-                        UsageWindowTile(window: window, isMeterWindow: preferences.menuBarMode.providers.contains(state.provider) && window.id == snapshot.meterWindow?.id)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Button { QuotaBarDelegate.shared?.showDetails(for: state.provider) } label: {
+                    HStack(spacing: 4) {
+                        Text(state.provider == .gemini ? "Gemini" : state.provider.displayName)
+                            .font(.subheadline.weight(.semibold))
+                        Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold)).foregroundStyle(.secondary)
                     }
                 }
-                if state.provider == .claude && snapshot.meterWindow == nil {
-                    Text("5-hour quota unavailable — ring unconfirmed").font(.caption2).foregroundStyle(.orange)
-                }
-                if state.hasStaleData() && state.errorMessage == nil {
-                    Label(state.provider == .claude && ClaudeHybridUsageProvider.supports(snapshot)
-                          ? "Last observed \(snapshot.fetchedAt.formatted(date: .omitted, time: .shortened)) — awaiting a newer measurement"
-                          : "Last known usage — current quota unconfirmed", systemImage: "clock.badge.exclamationmark")
-                        .font(.caption2).foregroundStyle(.orange)
+                .buttonStyle(.plain)
+                .accessibilityLabel("Detail · \(state.provider.displayName)")
+                Spacer()
+                if state.isRefreshing { ProgressView().controlSize(.mini) }
+            }
+            if windows.isEmpty {
+                Text(state.isInactive ? "Sledovanie pozastavené" : state.isRefreshing ? "Načítava sa…" : "Bez dostupnej kvóty")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                ForEach(windows) { window in
+                    QuotaSummaryRow(window: window, now: now,
+                                    accent: Color(nsColor: MenuBarIcon.providerColour(state.provider, dark: scheme == .dark)))
                 }
             }
-            if !state.isInactive, let notice = state.snapshot?.notice {
-                Label(notice, systemImage: "info.circle")
+            if let snapshot, state.isInactive || state.hasStaleData(at: now) || state.errorMessage != nil {
+                Label("Posledné meranie · \(snapshot.fetchedAt.formatted(date: .abbreviated, time: .shortened))", systemImage: "clock")
                     .font(.caption2).foregroundStyle(.secondary)
             }
             if !state.isInactive, let error = state.errorMessage {
                 ProviderErrorNotice(state: state, message: error, nextRetry: nextRetry)
-            } else if !state.isInactive && state.snapshot == nil {
-                Text(state.isRefreshing ? "Checking usage…" : "No usage data yet.")
-                    .font(.caption).foregroundStyle(.secondary)
+            } else if let notice = snapshot?.notice {
+                Text(notice).font(.caption2).foregroundStyle(.secondary)
             }
         }
-        .padding(12)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(nsColor: .separatorColor), lineWidth: 0.75))
+        .padding(.vertical, 7)
     }
-
-    // Keep shared quotas visible, and include the ring's window if model-specific.
-    // Other model limits remain available in Details without growing the popover.
-    private var overviewWindows: [UsageWindow] {
-        guard let snapshot = state.snapshot else { return [] }
-        var windows = Array(snapshot.windows.prefix(2))
-        if let meter = snapshot.meterWindow, !windows.contains(where: { $0.id == meter.id }) {
-            windows.append(meter)
-        }
-        return windows
-    }
-
-    private var detailLabel: String {
-        let extra = (state.snapshot?.windows.count ?? 0) - overviewWindows.count
-        return extra > 0 ? "Details (+\(extra))" : "Details"
-    }
-
-    @Environment(\.colorScheme) private var colourScheme
-    private var accent: Color { Color(nsColor: MenuBarIcon.providerColour(state.provider, dark: colourScheme == .dark)) }
 }
 
 private struct InactiveProviderNotice: View {
@@ -177,7 +149,7 @@ private struct InactiveProviderNotice: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Label("Vypnutá", systemImage: "power").font(.subheadline.weight(.medium))
-            Text(provider == .claude ? "Spusti lokálnu kartu Code v Claude alebo Claude Code s QuotaBar rozšírením." : "Spusti Codex alebo ChatGPT a sledovanie sa obnoví.")
+            Text(provider == .gemini ? "Spusti agy a sledovanie sa obnoví." : provider == .claude ? "Spusti lokálnu kartu Code v Claude alebo Claude Code s QuotaBar rozšírením." : "Spusti Codex alebo ChatGPT a sledovanie sa obnoví.")
                 .font(.caption2)
         }.foregroundStyle(.secondary)
     }
@@ -218,53 +190,64 @@ private struct ProviderErrorNotice: View {
     }
 }
 
-struct UsageWindowTile: View {
+private struct QuotaSummaryRow: View {
+    static let percentWidth: CGFloat = 66
+    static let resetWidth: CGFloat = 100
     let window: UsageWindow
-    let isMeterWindow: Bool
+    let now: Date
+    let accent: Color
 
-    var body: some View {
-        VStack(spacing: 5) {
-            ZStack {
-                Circle().stroke(.quaternary, lineWidth: 4)
-                Circle().trim(from: 0, to: window.clampedUsedPercent / 100)
-                    .stroke(usageColor(window.clampedUsedPercent), style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                VStack(spacing: 0) {
-                    Text(UsageFormatting.percent(window.clampedUsedPercent))
-                        .font(.system(size: 14, weight: .semibold, design: .rounded)).monospacedDigit()
-                    Text("used").font(.system(size: 9)).foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: 48, height: 48)
-            HStack(spacing: 3) {
-                Text(title).font(.caption.weight(.medium)).lineLimit(2)
-                if isMeterWindow {
-                    Text("Bar").font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 3)
-                        .background(.quaternary, in: Capsule())
-                }
-            }
-            Text(UsageFormatting.countdown(to: window.resetsAt).replacingOccurrences(of: "Resets in ", with: "Reset "))
-                .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
-                .lineLimit(2)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 5)
-        .padding(.vertical, 4)
-        .background(.quinary, in: RoundedRectangle(cornerRadius: 8))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(window.name)\(isMeterWindow ? ", shown in menu bar" : "")")
-        .accessibilityValue("\(UsageFormatting.percent(window.clampedUsedPercent)) used, \(UsageFormatting.percent(window.remainingPercent)) remaining. \(UsageFormatting.countdown(to: window.resetsAt))")
-        .help(window.name)
+    private var percent: String {
+        window.remainingPercent.formatted(.number.locale(Locale(identifier: "sk_SK")).precision(.fractionLength(0...2))) + " %"
     }
 
     private var title: String {
-        switch window.name {
-        case "5-hour session": "5 hours"
-        case "Weekly": "7 days"
-        default: window.name
+        window.name
+            .replacingOccurrences(of: "Gemini Models · ", with: "")
+            .replacingOccurrences(of: "Gemini 4 Argon Weekly Limit", with: "Argon · 7 dní")
+            .replacingOccurrences(of: " Limit Remaining", with: "")
+            .replacingOccurrences(of: " Limit", with: "")
+            .replacingOccurrences(of: "5-hour session", with: "5 hodín")
+            .replacingOccurrences(of: "Five Hour", with: "5 hodín")
+            .replacingOccurrences(of: "Weekly", with: "7 dní")
+    }
+
+    private var countdown: String {
+        guard let reset = window.resetsAt else { return "čas neznámy" }
+        let seconds = reset.timeIntervalSince(now)
+        guard seconds > 0 else { return "čaká na potvrdenie" }
+        let minutes = Int(ceil(seconds / 60))
+        let hours = minutes / 60, days = hours / 24
+        if days > 0 {
+            let unit = days == 1 ? "deň" : days < 5 ? "dni" : "dní"
+            return "\(days) \(unit) \(hours % 24) h"
         }
+        return hours > 0 ? "\(hours) h \(minutes % 60) min" : "\(minutes) min"
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(title).font(.callout)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            GeometryReader { geometry in
+                Capsule().fill(.quaternary)
+                    .overlay(alignment: .leading) {
+                        Capsule().fill(accent)
+                            .frame(width: geometry.size.width * window.remainingPercent / 100)
+                    }
+            }
+            .frame(width: 48, height: 4)
+            Text(percent).fontWeight(.semibold)
+                .frame(width: Self.percentWidth, alignment: .trailing)
+            Text(countdown)
+                .frame(width: Self.resetWidth, alignment: .trailing)
+        }
+        .font(.callout.monospacedDigit())
+        .padding(.vertical, 1)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(window.name)
+        .accessibilityValue("Zostáva \(percent). Reset: \(countdown)")
+        .help(window.name + (window.resetsAt.map { " · Reset " + $0.formatted() } ?? ""))
     }
 }
 
@@ -279,11 +262,12 @@ struct ProviderDetailsView: View {
                     Text("\(state.provider.displayName) details").font(.title2.weight(.semibold))
                     if state.isInactive {
                         InactiveProviderNotice(provider: state.provider)
-                    } else if let snapshot = state.snapshot {
+                    }
+                    if (!state.isInactive || state.provider == .gemini), let snapshot = state.snapshot {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Measured \(snapshot.fetchedAt.formatted(date: .abbreviated, time: .standard))")
                             Text(snapshot.source ?? "Legacy cached measurement")
-                            Text(snapshot.account ?? "Account identity not supplied by this source")
+                            Text(snapshot.account ?? (snapshot.accountID == nil ? "Account identity not supplied by this source" : "Account identified by this source"))
                             if let notice = snapshot.notice { Label(notice, systemImage: "info.circle") }
                             if state.hasStaleData() {
                                 Text("Last known data — current quota is unconfirmed").foregroundStyle(.orange)
@@ -293,7 +277,7 @@ struct ProviderDetailsView: View {
                             UsageWindowDetailRow(window: window, isStale: state.hasStaleData(), allowsForecast: state.provider != .claude, isMeterWindow: window.id == snapshot.meterWindow?.id, samples: history.series(for: snapshot, window: window))
                             Divider()
                         }
-                    } else {
+                    } else if !state.isInactive {
                         Text("No usage data yet.").foregroundStyle(.secondary)
                     }
                     if !state.isInactive, let error = state.errorMessage {
@@ -382,16 +366,19 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("Menu bar") {
-                Picker("Display", selection: $preferences.menuBarMode) {
+            Section("Horná lišta") {
+                Picker("Zobrazenie", selection: $preferences.menuBarMode) {
                     ForEach(MenuBarMode.allCases) { mode in Text(mode.title).tag(mode) }
+                }
+                if preferences.menuBarMode.hasCenterMark {
+                    Toggle("Zobraziť Q v strede kruhov", isOn: $preferences.showsCenterMark)
                 }
                 Text(preferences.menuBarMode.explanation).font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Section("General") {
                 Toggle("Launch QuotaBar at login", isOn: $preferences.launchAtLogin)
-                Text("Claude: local reads every 20 seconds; OAuth fallback at most every 5 minutes. Codex: checks every 1–5 minutes.")
+                Text("Claude: local reads every 20 seconds; OAuth fallback at most every 5 minutes. Codex and Gemini check every 1–5 minutes while active.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if let error = preferences.launchAtLoginError {
@@ -399,7 +386,7 @@ struct SettingsView: View {
                 }
             }
             Section("Notifications") {
-                Text("Claude automatic alerts and forecasts are paused until account identity is verified across its two sources. Codex alerts and the notification preview remain available.").font(.caption).foregroundStyle(.secondary)
+                Text("Claude automatic alerts and forecasts are paused until account identity is verified across its two sources. Gemini alerts use the account identified by agy.").font(.caption).foregroundStyle(.secondary)
                 Toggle("At 75% used", isOn: $preferences.notification75)
                 Toggle("At 90% used", isOn: $preferences.notification90)
                 Toggle("At 100% used", isOn: $preferences.notification100)
@@ -441,7 +428,7 @@ struct AboutView: View {
                 .font(.title2.weight(.semibold))
             Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development")")
                 .foregroundStyle(.secondary)
-            Text("A private, local-first meter for Claude and Codex subscription usage. No analytics, telemetry, or credential storage.")
+            Text("A private, local-first meter for Claude, Codex and Gemini subscription usage. No analytics, telemetry, or credential storage.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: 300)

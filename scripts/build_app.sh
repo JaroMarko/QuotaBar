@@ -27,6 +27,7 @@ swift build \
 
 mkdir -p "$app_path/Contents/MacOS" "$app_path/Contents/Resources"
 cp "$build_root/release/QuotaBar" "$app_path/Contents/MacOS/QuotaBar"
+cp "$project_root/Sources/QuotaBarCore/Resources/agy-quota.exp" "$app_path/Contents/Resources/"
 cp "$project_root/Resources/Info.plist" "$app_path/Contents/Info.plist"
 cp "$project_root/Resources/Icons/openai-blossom.svg" "$app_path/Contents/Resources/openai-blossom.svg"
 cp "$project_root/Resources/Icons/claude-spark.svg" "$app_path/Contents/Resources/claude-spark.svg"
