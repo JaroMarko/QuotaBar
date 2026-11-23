@@ -1,75 +1,42 @@
 # QuotaBar
 
-QuotaBar is a private, local-first macOS menu-bar app for Claude/Claude Code, ChatGPT Work/Codex and native Gemini quotas in Antigravity CLI.
+See how much Claude, Codex and Gemini quota you have left, and when each limit resets, from the macOS menu bar.
 
-## Requirements
+<img src="docs/images/menu-bar.png" width="360" alt="Menu bar preview with the three coloured QuotaBar rings beside Wi-Fi">
 
-- macOS 14 or newer on Apple Silicon
-- For Gemini, a signed-in Antigravity CLI (verified with agy 1.5.14)
-- Codex CLI signed in with ChatGPT
-- Local Claude Code session (Desktop Code>=2.1.286 or CLI>=2.1.287), signed in, with the included QuotaBar mod installed
+The rings show **quota used**. From the outside in, they track Claude’s 5-hour window, Codex’s 7-day window and Gemini’s 5-hour window. Click the icon to see **quota remaining** and the **time until reset** for each window.
 
-QuotaBar never stores or logs provider credentials. It reads the existing CLI sessions only during refresh and stores preferences, the last successful usage snapshot, notification deduplication and bounded local usage history.
+<img src="docs/images/quota-panel.png" width="360" alt="Opened quota panel with sample data. Claude has 76% left in its 5-hour window, Codex has 18% left this week, and Gemini shows three separate windows.">
 
-## Install and update with Homebrew
+In **Nastavenia → Sledované aplikácie**, turn on the providers you use. Both the icon and the panel adapt to your selection. Prefer vertical bars? Choose **Horná lišta → Zobrazenie → Zvislé stĺpce**.
+
+## Install
+
+Requires **Apple Silicon**, **macOS 14 or later** and [Homebrew](https://brew.sh). Run in Terminal:
 
 ```sh
 brew tap jaromarko/quotabar https://github.com/JaroMarko/QuotaBar.git
-# On Homebrew versions that require explicit trust for third-party casks:
 brew trust --cask jaromarko/quotabar/quotabar
 brew install --cask jaromarko/quotabar/quotabar
+open /Applications/QuotaBar.app
 ```
 
-If you previously installed QuotaBar manually, quit it and move the existing
-`/Applications/QuotaBar.app` to a backup folder before the first cask install.
-Your preferences and quota history are stored separately from the app bundle.
-For subsequent releases, run `brew update && brew upgrade --cask quotabar`.
-The Apple Silicon download is ad-hoc signed and has no Apple notarization.
+The app is ad-hoc signed. macOS may ask for confirmation on first launch because the build is not notarized. If you have an older manual installation, quit it and move the old app out of Applications before installing.
 
-## Build and check
+**Update later:** `brew update && brew upgrade --cask quotabar`
+
+## Connect your providers
+
+| Provider | What you need |
+| --- | --- |
+| Claude | A signed-in local Claude Code session. For local measurements, run the bridge installer below, then open a new Code session. |
+| Codex | Codex CLI installed and signed in with ChatGPT. |
+| Gemini | Antigravity CLI (`agy`) installed and signed in. QuotaBar reads its built-in `/usage` panel while a user session is running. |
+
+**Claude bridge** (requires the Claude CLI):
 
 ```sh
-./scripts/verify.sh
-./scripts/verify.sh --live  # also checks the existing provider logins
-./scripts/package_pkg.sh
+"$(brew --repo jaromarko/quotabar)/scripts/install_claude_bridge.sh"
 ```
 
-The app bundle is created at `dist/QuotaBar.app`. The package is written to the project `dist` directory by default.
-
-The included check executable is used because this Mac's standalone Command Line Tools installation does not include a compatible XCTest runtime. It exercises the decoding, calculation, error, and notification logic and exits nonzero on failure.
-
-The bundle and installer identifiers retain `com.jaroslavmarko.planmeter` for compatibility with existing settings.
-
-The app build uses the native SwiftPM build system and macOS 26.5 SDK when available. Set `QUOTABAR_SDK_PATH` to override the SDK.
-
-## Gemini via Antigravity CLI
-
-While a user session of `agy` is running, QuotaBar opens its own pseudoterminal in an empty workspace, selects the built-in `/usage` command, and reads the quota panel. Each native Gemini group and reset window appears once. The inner ring shows used quota for the five-hour window. Account-scoped history and alerts use a hash of the identity on the quota screen. To compare the provider output with your interactive CLI, run `.build-quotabar/release/QuotaBarChecks --live-gemini`.
-
-## Claude hybrid source
-
-After installing QuotaBar in `/Applications`, run `./scripts/install_claude_bridge.sh`. It adds only the bundled local marketplace and mod, preserving existing Claude plugins and Caveman statusline. Fresh local5h measurements (up to5min) take priority; when unavailable/older, an experimental read-only OAuth usage request uses the existing Claude Code login. No login/token refresh is performed. Requests are spaced by at least5min; cached fresh API data can avoid requests for10min. HTTP429 pauses15/30/60min, respects a longer Retry-After, survives restarts and never blocks new local data. In an existing local Code session, run `/reload-plugins` then `/quotabar-sync`, or open a new session. The mod exports on `session.measure` (turn completion / reported plan usage changes), and offers a manual sync command without an LLM request.
-
-Only the 5-hour/weekly percentages, reset timestamps and measurement time are saved to `~/Library/Application Support/QuotaBar/claude-session-usage.json` using an atomic0600 write. No prompts, transcript, context percent, costs, credentials or session ID are saved by the mod. The fallback reads an existing credential in memory, stores only sanitized API measurements and retry state, and never logs or writes tokens. Missing windows never become zero. Read interval20s does not fetch the server or make data newer; after10min without an observation it is labelled last known. Its ring remains visible while that specific window has a known future reset; expired windows and old windows without reset timestamps are hidden. Chat/Cowork-only and remote/cloud sessions without the local QuotaBar app cannot provide this bridge.
-
-`claude plugin uninstall quotabar-usage@quotabar-local` removes the bridge; it does not affect other plugins. A future public distribution must bundle setup instead of relying on the local repo marketplace path.
-
-## Monitoring and privacy
-
-- Settings → Sledované aplikácie lets you enable Claude, Codex and Gemini independently. Disabled providers are skipped during refresh and hidden from the popup. Combined menu bar layouts resize for the selected providers. Turning all three off leaves the settings accessible.
-- Menu bar: one compact24pt image (28pt status item), no text. Settings selects concentric rings (default: outer Claude, middle Codex, inner Gemini),left/right semicircles (Claude/Codex),individual Claude, Codex or Gemini rings, three vertical columns or the QuotaBar icon only. Columns fill from top to bottom with used quota for Claude 5h, Codex 7d and Gemini 5h, left to right. Provider-only modes retain their logo; combined modes have a refined Q matching the app identity in the centre. Combined rings use terracotta for Claude (#D97757) and cyan for Codex (#0891B2 on light backgrounds, #67E8F9 on dark backgrounds), with neutral unused tracks; the centre adapts to the menu bar appearance. Claude and Gemini display five-hour usage. Codex displays seven-day usage. An absent period has no substitute. Dotted rings mean current data is unavailable/stale, including a missing Claude 5h value.
-- Interaction: left-click opens/closes the centred popup; right-click or Control-click opens a native Quit menu. Popup size follows the current content; macOS keeps it within screen edges.
-- Popup: shared quota tiles side by side, circular usage rings with centred percentages and reset countdowns without scrolling. A Bar badge marks the ring window. Additional model windows, history, forecast, exact resets and source/account diagnostics are available in separate resizable Details windows. Claude session.usage does not supply account identity. Its source is shown in Details; Claude forecasts and automatic quota notifications are withheld while identity is unknown. Codex notifications and test notifications remain available.
-- Activity: each provider pauses quota checks while neither its desktop app nor native CLI is running. Claude desktop/Claude Code and Codex/ChatGPT/Codex CLI are detected separately; inactive cards show Vypnutá. Gemini retains the last measured values and timestamp in its card. App launch/quit updates promptly; CLI activity is checked by the20-second background loop and when refreshing. Failed detection stays unknown,not inactive. Own app-server and other users’ CLI processes are excluded.
-- Errors: ? explains the problem on hover or click; popup shows the next retry time. A429 pause survives app restarts. Claude primarily uses local session.usage; experimental OAuth fallback has a separate persisted cooldown. Fallback status is shown without hiding valid last-known rings. Provider contracts: `docs/data-sources-2026-10-14.md`.
-- Refresh: 1 minute while usage changes, usage is high or reset is near; 5 minutes when quiet. Errors back off to 15 minutes, and 429 responses enforce a 10-minute cooldown even for manual refresh.
-- Quota history: local `~/Library/Application Support/QuotaBar/history.json`, limited to 30 days and 10,000 samples. No prompts/transcripts are read. Clear it from the menu's trash button.
-- Forecasts need >=3 recent monotonic samples spanning >=10 minutes in the same account/window/reset cycle. They are estimates and disappear when their assumptions fail.
-- Settings → Notifications includes Send test notification; it reports missing permission/errors and never modifies quota history or notification deduplication. Banners can also appear while QuotaBar is active, subject to macOS notification and Focus settings.
-- Settings and notification deduplication use the existing `com.jaroslavmarko.planmeter` preferences domain. Original provider credentials are never rewritten.
-
-## Verification
-
-Run `scripts/verify.sh`; live checks are optional via `scripts/verify.sh --live` and reuse existing provider logins. App smoke commands: `QuotaBar --verify-store`, `QuotaBar --verify-menu`, `QuotaBar --preview-icons /absolute/output.png`, `QuotaBar --preview-popup /absolute/output.png`, and `QuotaBar --smoke-report /absolute/report.json`. Smoke reports omit account identifiers and credentials.
-
-Local builds use an ad-hoc signature. Public distribution still requires Developer ID signing and notarization; a successful local build is not a notarized release.
+Quota history stays on your Mac. QuotaBar has no analytics and does not store provider credentials.
