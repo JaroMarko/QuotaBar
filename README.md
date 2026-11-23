@@ -15,6 +15,8 @@ QuotaBar never stores or logs provider credentials. It reads the existing CLI se
 
 ```sh
 brew tap jaromarko/quotabar https://github.com/JaroMarko/QuotaBar.git
+# On Homebrew versions that require explicit trust for third-party casks:
+brew trust --cask jaromarko/quotabar/quotabar
 brew install --cask jaromarko/quotabar/quotabar
 ```
 
@@ -54,6 +56,7 @@ Only the 5-hour/weekly percentages, reset timestamps and measurement time are sa
 
 ## Monitoring and privacy
 
+- Settings → Sledované aplikácie lets you enable Claude, Codex and Gemini independently. Disabled providers are skipped during refresh and hidden from the popup. Combined menu bar layouts resize for the selected providers. Turning all three off leaves the settings accessible.
 - Menu bar: one compact24pt image (28pt status item), no text. Settings selects concentric rings (default: outer Claude, middle Codex, inner Gemini),left/right semicircles (Claude/Codex),individual Claude, Codex or Gemini rings, three vertical columns or the QuotaBar icon only. Columns fill from top to bottom with used quota for Claude 5h, Codex 7d and Gemini 5h, left to right. Provider-only modes retain their logo; combined modes have a refined Q matching the app identity in the centre. Combined rings use terracotta for Claude (#D97757) and cyan for Codex (#0891B2 on light backgrounds, #67E8F9 on dark backgrounds), with neutral unused tracks; the centre adapts to the menu bar appearance. Claude and Gemini display five-hour usage. Codex displays seven-day usage. An absent period has no substitute. Dotted rings mean current data is unavailable/stale, including a missing Claude 5h value.
 - Interaction: left-click opens/closes the centred popup; right-click or Control-click opens a native Quit menu. Popup size follows the current content; macOS keeps it within screen edges.
 - Popup: shared quota tiles side by side, circular usage rings with centred percentages and reset countdowns without scrolling. A Bar badge marks the ring window. Additional model windows, history, forecast, exact resets and source/account diagnostics are available in separate resizable Details windows. Claude session.usage does not supply account identity. Its source is shown in Details; Claude forecasts and automatic quota notifications are withheld while identity is unknown. Codex notifications and test notifications remain available.

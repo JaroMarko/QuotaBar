@@ -7,9 +7,9 @@ enum MenuBarMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .concentric: "Tri prstence"
+        case .concentric: "Sústredné prstence"
         case .columns: "Zvislé stĺpce"
-        case .semicircles: "Polkruhy · Claude a Codex"
+        case .semicircles: "Polkruhy"
         case .claude: "Iba Claude"
         case .codex: "Iba Codex"
         case .gemini: "Iba Gemini"
@@ -28,15 +28,29 @@ enum MenuBarMode: String, CaseIterable, Identifiable {
         case .iconOnly: []
         }
     }
-    var explanation: String {
-        switch self {
-        case .concentric: "Prstence ukazujú využitie od vonkajšieho po vnútorný: Claude 5 h, Codex 7 dní, Gemini 5 h."
-        case .columns: "Zľava Claude 5 h, Codex 7 dní a Gemini 5 h. Farebná časť rastie zhora nadol podľa vyčerpanej kvóty."
+    func providers(for enabled: Set<ProviderKind>) -> [ProviderKind] {
+        let ordered = ProviderKind.allCases.filter(enabled.contains)
+        if self == .semicircles { return Array(ordered.prefix(2)) }
+        return providers.filter(enabled.contains)
+    }
+
+    func explanation(for enabled: Set<ProviderKind>) -> String {
+        let names = providers(for: enabled).map {
+            switch $0 {
+            case .claude: "Claude 5 h"
+            case .codex: "Codex 7 dní"
+            case .gemini: "Gemini 5 h"
+            }
+        }.joined(separator: ", ")
+        if enabled.isEmpty { return "Sledovanie je vypnuté." }
+        return switch self {
+        case .concentric: "Od vonkajšieho prstenca: \(names)."
+        case .columns: "Zľava: \(names). Farebná časť rastie zhora nadol podľa vyčerpanej kvóty."
         case .claude: "Využitie päťhodinového okna Claude."
         case .codex: "Využitie týždenného okna Codexu."
         case .gemini: "Využitie päťhodinového okna Gemini."
         case .iconOnly: "Kliknutím na ikonu otvoríš prehľad kvót."
-        case .semicircles: "Vľavo využitie päťhodinového okna Claude, vpravo týždenného okna Codexu."
+        case .semicircles: "Zobrazené okná: \(names)."
         }
     }
 }
@@ -52,6 +66,24 @@ final class AppPreferences: ObservableObject {
         static let notification100 = "notification100"
         static let notificationReset = "notificationReset"
         static let defaultsRegistered = "defaultsRegistered"
+    }
+
+    @Published private(set) var enabledProviders: Set<ProviderKind>
+    static func monitoredProviders(in defaults: UserDefaults) -> Set<ProviderKind> {
+        guard let saved = defaults.stringArray(forKey: "monitoredProviders") else { return Set(ProviderKind.allCases) }
+        return Set(saved.compactMap(ProviderKind.init(rawValue:)))
+    }
+
+    var availableModes: [MenuBarMode] {
+        MenuBarMode.allCases.filter { $0 == .iconOnly || !$0.providers(for: enabledProviders).isEmpty }
+    }
+    var effectiveMode: MenuBarMode {
+        availableModes.contains(menuBarMode) ? menuBarMode : (enabledProviders.isEmpty ? .iconOnly : .concentric)
+    }
+
+    func setMonitoring(_ kind: ProviderKind, enabled: Bool) {
+        if enabled { enabledProviders.insert(kind) } else { enabledProviders.remove(kind) }
+        defaults.set(enabledProviders.map(\.rawValue).sorted(), forKey: "monitoredProviders")
     }
 
     @Published var menuBarMode: MenuBarMode {
@@ -78,6 +110,7 @@ final class AppPreferences: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        enabledProviders = Self.monitoredProviders(in: defaults)
         showsCenterMark = defaults.object(forKey: Key.showsCenterMark) as? Bool ?? true
         menuBarMode = defaults.string(forKey: Key.menuBarMode).flatMap(MenuBarMode.init(rawValue:)) ?? .concentric
         if !defaults.bool(forKey: Key.defaultsRegistered) {

@@ -12,9 +12,10 @@ enum MenuBarIcon {
     static var hasClaudeArtwork: Bool { claude != nil }
 
     static func image(states: [ProviderDisplayState], mode: MenuBarMode = .concentric, showsCenterMark: Bool = true, now: Date = Date(), appearance: NSAppearance? = nil) -> NSImage {
+        let visible = mode.providers(for: Set(states.map(\.provider)))
         let combined = mode.providers.count > 1
-        let allOff = mode.providers.allSatisfy { provider in states.first(where: { $0.provider == provider })?.isInactive == true }
-        let renderedMode: MenuBarMode = combined && allOff ? .iconOnly : mode
+        let allOff = visible.allSatisfy { provider in states.first(where: { $0.provider == provider })?.isInactive == true }
+        let renderedMode: MenuBarMode = visible.isEmpty || (combined && allOff) ? .iconOnly : mode
         let coloured = renderedMode.providers.count > 1
         let expanded = coloured && !showsCenterMark
         let dark = (appearance ?? NSApplication.shared.effectiveAppearance).bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
@@ -25,22 +26,29 @@ enum MenuBarIcon {
                       span: CGFloat = 360, clockwise: Bool = true) {
                 guard states.first(where: { $0.provider == provider })?.isInactive != true else { return }
                 drawRing(value: values[provider] ?? nil, radius: radius, start: start, span: span, clockwise: clockwise,
-                         lineWidth: expanded ? 2.4 : 1.35, colour: coloured ? providerColour(provider, dark: dark) : ink, ink: ink)
+                         lineWidth: renderedMode == .concentric && visible.count < 3 ? (expanded ? 3.2 : 2.2) : (expanded ? 2.4 : 1.35), colour: coloured ? providerColour(provider, dark: dark) : ink, ink: ink)
             }
             switch renderedMode {
             case .concentric:
-                ring(.claude, radius: expanded ? 10.3 : 10.7)
-                ring(.codex, radius: expanded ? 6.8 : 7.8)
-                ring(.gemini, radius: expanded ? 3.3 : 4.9)
+                let outer: CGFloat = expanded ? 10.3 : 10.7
+                let inner: CGFloat = expanded ? 3.3 : 4.9
+                for (index, provider) in visible.enumerated() {
+                    let step = (outer - inner) / CGFloat(max(1, visible.count - 1))
+                    ring(provider, radius: outer - CGFloat(index) * step)
+                }
                 if showsCenterMark { drawQuotaMark(diameter: 5, ink: ink) }
             case .semicircles:
-                ring(.claude, radius: 10.7, start: 96, span: 168, clockwise: false)
-                ring(.codex, radius: 10.7, start: 84, span: 168)
+                if visible.count == 1 { ring(visible[0], radius: 10.7) }
+                else {
+                    ring(visible[0], radius: 10.7, start: 96, span: 168, clockwise: false)
+                    ring(visible[1], radius: 10.7, start: 84, span: 168)
+                }
                 if showsCenterMark { drawQuotaMark(diameter: 12, ink: ink) }
             case .columns:
-                for (index, provider) in mode.providers.enumerated() {
+                let width = (20 - CGFloat(visible.count - 1)) / CGFloat(visible.count)
+                for (index, provider) in visible.enumerated() {
                     guard states.first(where: { $0.provider == provider })?.isInactive != true else { continue }
-                    let bounds = NSRect(x: CGFloat(2 + index * 7), y: 3, width: 6, height: 18)
+                    let bounds = NSRect(x: 2 + CGFloat(index) * (width + 1), y: 3, width: width, height: 18)
                     let track = NSBezierPath(roundedRect: bounds, xRadius: 1.5, yRadius: 1.5)
                     guard let used = values[provider] ?? nil else {
                         ink.withAlphaComponent(0.55).setStroke()
@@ -75,7 +83,7 @@ enum MenuBarIcon {
             case .iconOnly:
                 drawQuotaMark(diameter: 18, ink: ink)
             }
-            if states.contains(where: { mode.providers.contains($0.provider) && !$0.isInactive && $0.errorMessage != nil }) {
+            if states.contains(where: { visible.contains($0.provider) && !$0.isInactive && $0.errorMessage != nil }) {
                 ink.setFill()
                 NSBezierPath(ovalIn: NSRect(x: 21, y: 0, width: 3, height: 3)).fill()
             }

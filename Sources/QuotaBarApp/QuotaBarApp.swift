@@ -74,9 +74,11 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
 
     private func updateIcon() {
         let states = UsageStore.shared.orderedStates
-        statusItem?.button?.image = MenuBarIcon.image(states: states, mode: UsageStore.shared.preferences.menuBarMode, showsCenterMark: UsageStore.shared.preferences.showsCenterMark, appearance: statusItem?.button?.effectiveAppearance)
-        let mode = UsageStore.shared.preferences.menuBarMode
-        statusItem?.button?.toolTip = mode.explanation + "\n" + states.map { state in
+        statusItem?.button?.image = MenuBarIcon.image(states: states, mode: UsageStore.shared.preferences.effectiveMode, showsCenterMark: UsageStore.shared.preferences.showsCenterMark, appearance: statusItem?.button?.effectiveAppearance)
+        let preferences = UsageStore.shared.preferences
+        for (kind, window) in detailWindows where !preferences.enabledProviders.contains(kind) && window.isVisible { window.close() }
+        let explanation = preferences.effectiveMode.explanation(for: preferences.enabledProviders)
+        statusItem?.button?.toolTip = explanation + "\n" + states.map { state in
             if state.isInactive { return "\(state.provider.displayName): Vypnutá" }
             let detail = state.meterValue().map { "\(state.snapshot?.meterWindow?.name ?? "Quota"): \(UsageFormatting.percent($0)) used" } ?? "current usage unavailable"
             let observed = state.snapshot.map { snapshot in
@@ -85,7 +87,7 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
             let notice = state.snapshot?.notice.map { " · " + $0 } ?? ""
             return "\(state.provider.displayName): \(detail)\(observed)\(notice)"
         }.joined(separator: "\n")
-        statusItem?.button?.setAccessibilityLabel("QuotaBar. " + UsageStore.shared.preferences.menuBarMode.explanation)
+        statusItem?.button?.setAccessibilityLabel("QuotaBar. " + explanation)
     }
 
     @objc private func handleStatusClick() {
@@ -137,7 +139,7 @@ final class QuotaBarDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
             let window = NSWindow(contentRect: NSRect(x: 0,y: 0,width: 460,height: 600),
                 styleMask: [.titled,.closable], backing: .buffered, defer: false)
             window.title = "QuotaBar Settings"; window.isReleasedWhenClosed = false
-            window.contentViewController = NSHostingController(rootView: SettingsView(preferences: UsageStore.shared.preferences))
+            window.contentViewController = NSHostingController(rootView: SettingsView(preferences: UsageStore.shared.preferences, setMonitoring: UsageStore.shared.setMonitoring))
             window.center(); settingsWindow = window
         }
         settingsWindow?.makeKeyAndOrderFront(nil)
@@ -183,6 +185,7 @@ enum QuotaBarMain {
         if let index = CommandLine.arguments.firstIndex(of: "--capture-claude-usage") {
             guard CommandLine.arguments.count == index + 2,
                   let data = CommandLine.arguments[index + 1].data(using: .utf8) else { exit(1) }
+            guard AppPreferences.monitoredProviders(in: .standard).contains(.claude) else { exit(0) }
             do { try ClaudeSessionUsageProvider.capture(data: data); exit(0) }
             catch { fputs("Local Claude quota capture failed.\n", stderr); exit(1) }
         }

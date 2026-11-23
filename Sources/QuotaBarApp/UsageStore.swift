@@ -84,10 +84,20 @@ final class UsageStore: ObservableObject {
         refreshLoop?.cancel(); networkMonitor.cancel()
     }
 
-    var orderedStates: [ProviderDisplayState] { ProviderKind.allCases.compactMap { states[$0] } }
+    private var monitoringGeneration: [ProviderKind: Int] = [:]
+    func setMonitoring(_ kind: ProviderKind, enabled: Bool) {
+        guard preferences.enabledProviders.contains(kind) != enabled else { return }
+        preferences.setMonitoring(kind, enabled: enabled)
+        monitoringGeneration[kind, default: 0] += 1
+        states[kind]?.isRefreshing = false
+        presence[kind] = nil
+        if enabled && started { Task { await refreshAll(force: false) } }
+    }
+
+    var orderedStates: [ProviderDisplayState] { ProviderKind.allCases.filter(preferences.enabledProviders.contains).compactMap { states[$0] } }
 
     private func synchronizeActivity() {
-        for kind in ProviderKind.allCases {
+        for kind in preferences.enabledProviders {
             let previous = presence[kind]
             presence[kind] = activityProbe(kind)
             guard let running = presence[kind] else {
@@ -143,7 +153,7 @@ final class UsageStore: ObservableObject {
                 let recovered = !self.networkAvailable && path.status == .satisfied
                 self.networkAvailable = path.status == .satisfied
                 if !self.networkAvailable {
-                    for provider in self.providers where provider.requiresNetwork && self.states[provider.kind]?.isInactive != true {
+                    for provider in self.providers where self.preferences.enabledProviders.contains(provider.kind) && provider.requiresNetwork && self.states[provider.kind]?.isInactive != true {
                         let kind = provider.kind
                         self.states[kind]?.isStale = self.states[kind]?.snapshot != nil
                         self.states[kind]?.errorMessage = "Offline — waiting for the network"
@@ -181,7 +191,7 @@ final class UsageStore: ObservableObject {
         if isRefreshing { pendingRefresh = pendingRefresh || force; return }
         let now = Date()
         var selected = providers.filter { provider in
-            if presence[provider.kind] != true { return false }
+            if !preferences.enabledProviders.contains(provider.kind) || presence[provider.kind] != true { return false }
             if let until = rateLimitedUntil[provider.kind], until > now { return false }
             return force || (nextRefreshAt[provider.kind] ?? .distantPast) <= now
         }
@@ -205,6 +215,7 @@ final class UsageStore: ObservableObject {
             }
         }
         for provider in selected { states[provider.kind]?.isRefreshing = true }
+        let generations = monitoringGeneration
         await withTaskGroup(of: (ProviderKind, Result<UsageSnapshot, Error>).self) { group in
             for provider in selected {
                 group.addTask {
@@ -213,6 +224,7 @@ final class UsageStore: ObservableObject {
                 }
             }
             for await (kind, result) in group {
+                guard generations[kind] == monitoringGeneration[kind] else { continue }
                 synchronizeActivity()
                 let inactive = presence[kind] == false
                 let unverified = presence[kind] == nil
@@ -248,13 +260,13 @@ final class UsageStore: ObservableObject {
                     }
                     synchronizeActivity()
                     // Claude sources do not yet share a verified account identity.
-                    if presence[kind] != true || kind == .claude || (kind == .gemini && snapshot.accountID == nil) { continue }
+                    if generations[kind] != monitoringGeneration[kind] || presence[kind] != true || kind == .claude || (kind == .gemini && snapshot.accountID == nil) { continue }
                     let alerts = ledger.take(previous: previous, current: snapshot,
                         thresholds: preferences.enabledThresholds, resetEnabled: preferences.notificationReset)
                     if let data = try? JSONEncoder().encode(ledger) { defaults.set(data, forKey: "alertLedger") }
                     for alert in alerts {
                         synchronizeActivity()
-                        guard presence[kind] == true else { break }
+                        guard generations[kind] == monitoringGeneration[kind], presence[kind] == true else { break }
                         await notificationService.send(alert)
                     }
                 case let .failure(error):

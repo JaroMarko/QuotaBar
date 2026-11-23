@@ -12,7 +12,8 @@ struct QuotaBarMenuView: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             VStack(spacing: 8) {
-                header
+                if store.orderedStates.isEmpty { Text("Sledovanie je vypnuté.").foregroundStyle(.secondary) }
+                else { header }
                 ViewThatFits(in: .vertical) {
                     providerCards(at: context.date).fixedSize(horizontal: false, vertical: true)
                     ScrollView { providerCards(at: context.date) }
@@ -62,7 +63,7 @@ struct QuotaBarMenuView: View {
                 Label("Nastavenia", systemImage: "gearshape")
             }.buttonStyle(.borderless)
             Button { Task { await store.refreshAll(force: true) } } label: { Image(systemName: "arrow.clockwise") }
-                .buttonStyle(.borderless).disabled(store.isRefreshing)
+                .buttonStyle(.borderless).disabled(store.isRefreshing || store.orderedStates.isEmpty)
                 .help(lastUpdatedText).accessibilityLabel("Obnoviť kvóty")
             Button("O aplikácii") { showingAbout = true }.buttonStyle(.borderless)
             Button { confirmingClearHistory = true } label: { Image(systemName: "trash") }
@@ -361,19 +362,28 @@ struct UsageWindowDetailRow: View {
 
 struct SettingsView: View {
     @ObservedObject var preferences: AppPreferences
+    let setMonitoring: (ProviderKind, Bool) -> Void
     @State private var sendingTest = false
     @State private var testMessage: String?
 
     var body: some View {
         Form {
-            Section("Horná lišta") {
-                Picker("Zobrazenie", selection: $preferences.menuBarMode) {
-                    ForEach(MenuBarMode.allCases) { mode in Text(mode.title).tag(mode) }
+            Section("Sledované aplikácie") {
+                ForEach(ProviderKind.allCases) { provider in
+                    Toggle(provider.displayName, isOn: Binding(
+                        get: { preferences.enabledProviders.contains(provider) },
+                        set: { setMonitoring(provider, $0) }
+                    ))
                 }
-                if preferences.menuBarMode.hasCenterMark {
+            }
+            Section("Horná lišta") {
+                Picker("Zobrazenie", selection: Binding(get: { preferences.effectiveMode }, set: { preferences.menuBarMode = $0 })) {
+                    ForEach(preferences.availableModes) { mode in Text(mode.title).tag(mode) }
+                }
+                if preferences.effectiveMode.hasCenterMark {
                     Toggle("Zobraziť Q v strede kruhov", isOn: $preferences.showsCenterMark)
                 }
-                Text(preferences.menuBarMode.explanation).font(.caption).foregroundStyle(.secondary)
+                Text(preferences.effectiveMode.explanation(for: preferences.enabledProviders)).font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Section("General") {

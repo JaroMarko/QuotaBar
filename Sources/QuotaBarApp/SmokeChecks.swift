@@ -116,7 +116,7 @@ enum SmokeChecks {
             preferences.menuBarMode = mode
             guard AppPreferences(defaults: defaults).menuBarMode == mode,
                   MenuBarIcon.image(states: [], mode: mode).size == NSSize(width: 24, height: 24),
-                  MenuBarIcon.image(states: [], mode: mode).isTemplate == (mode != .concentric && mode != .semicircles && mode != .columns) else { return false }
+                  MenuBarIcon.image(states: [], mode: mode).isTemplate == true else { return false }
         }
         defaults.set("invalid-future-mode", forKey: "menuBarMode")
         guard AppPreferences(defaults: defaults).menuBarMode == .concentric,
@@ -386,6 +386,31 @@ enum SmokeChecks {
         await pending.value
         guard store.states[.codex]?.isInactive == true, store.states[.codex]?.meterValue() == nil,
               store.states[.codex]?.errorMessage == nil else { return false }
+        running.insert(.codex)
+        await codex.suspendNext()
+        let previousCapture = store.states[.codex]?.snapshot?.fetchedAt
+        let measuring = Task { await store.refreshAll(force: true) }
+        let limit = Date().addingTimeInterval(2)
+        while await codex.callCount() < 4 && Date() < limit { await Task.yield() }
+        guard await codex.callCount() == 4 else { measuring.cancel(); return false }
+        for kind in ProviderKind.allCases { store.setMonitoring(kind, enabled: false) }
+        await codex.resume()
+        await measuring.value
+        await store.refreshAll(force: true)
+        guard store.orderedStates.isEmpty, preferences.effectiveMode == .iconOnly,
+              AppPreferences(defaults: defaults).enabledProviders.isEmpty,
+              store.states[.codex]?.snapshot?.fetchedAt == previousCapture,
+              await codex.callCount() == 4 else { return false }
+        store.setMonitoring(.codex, enabled: true)
+        store.setMonitoring(.gemini, enabled: true)
+        preferences.menuBarMode = .claude
+        guard store.orderedStates.map(\.provider) == [.codex, .gemini],
+              preferences.effectiveMode == .concentric,
+              MenuBarMode.semicircles.providers(for: preferences.enabledProviders) == [.codex, .gemini]
+        else { return false }
+        await store.refreshAll(force: false)
+        guard await codex.callCount() == 5 else { return false }
+        print("PASS monitoring switches: persisted empty selection, disabled in-flight result discarded, adaptive pair, resume")
         guard ProviderActivityProbe.matchesCLIName("claude", provider: .claude),
               ProviderActivityProbe.matchesCLIName("codex", provider: .codex),
               !ProviderActivityProbe.matchesCLIName("claude-helper", provider: .claude),
