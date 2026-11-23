@@ -2,7 +2,7 @@
 
 See how much Claude, Codex and Gemini quota you have left, and when each limit resets, from the macOS menu bar.
 
-<img src="docs/images/menu-bar.png" width="360" alt="Menu bar preview with the three coloured QuotaBar rings beside Wi-Fi">
+<img src="docs/images/menu-bar.png" width="360" alt="QuotaBar rings beside the battery and Wi-Fi indicators on a macOS Sonoma desktop preview">
 
 The rings show **quota used**. From the outside in, they track Claude’s 5-hour window, Codex’s 7-day window and Gemini’s 5-hour window. Click the icon to see **quota remaining** and the **time until reset** for each window.
 
