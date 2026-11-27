@@ -93,9 +93,7 @@ private struct ProviderCard: View {
     }
 
     private var windows: [UsageWindow] {
-        (snapshot?.windows ?? []).filter { window in
-            state.provider != .codex || !(window.name.hasSuffix("5-hour session") || window.durationMinutes == 300)
-        }.sorted { lhs, rhs in
+        (snapshot?.windows ?? []).sorted { lhs, rhs in
             let left = lhs.durationMinutes ?? .max, right = rhs.durationMinutes ?? .max
             if left != right { return left < right }
             if state.provider == .gemini {
